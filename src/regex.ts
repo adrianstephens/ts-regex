@@ -1,4 +1,4 @@
-import { SparseBits } from "./bits";
+import { bits } from "@isopodlabs/utilities";
 
 /*
 Characters
@@ -82,8 +82,8 @@ const posixClasses: Record<string, string> = {
     xdigit: 'A-Fa-f0-9',
 };
 
-export class characterClass extends SparseBits {
-	type: 'class' = 'class';
+export class characterClass extends bits.SparseBits {
+	type = 'class' as const;
 
 	//setChar(char: string) {
 	//	this.set(char.charCodeAt(0));
@@ -217,7 +217,7 @@ interface quantified {
 	max: number; // -1 = inf
 	mod: quantifiedMod;
 }
-export function repeatFrom(part: part, min: number, max: number = -1, mod: quantifiedMod = 'greedy'): quantified {
+export function repeatFrom(part: part, min: number, max = -1, mod: quantifiedMod = 'greedy'): quantified {
 	return {type: 'quantified', part, min, max, mod};
 }
 export function repeat(part: part, n: number, mod: quantifiedMod = 'greedy'): quantified {
@@ -500,7 +500,7 @@ export function parse(re: string, unicode = true, extended = false): part {
 			}
 
 		//Groups
-			case '(':
+			case '(': {
 				let group: capture | noncapture;
 				const dummy = '';//text(''); // placeholder
 				if (re[i] === '?') {
@@ -531,6 +531,7 @@ export function parse(re: string, unicode = true, extended = false): part {
 								group = noncapture(dummy, 'atomic');
 								break;
 							}
+							//fall through
 						default: {
 							let		set = true;
 							const	flags: {i?: boolean; m?: boolean; s?: boolean} = {};
@@ -555,6 +556,7 @@ export function parse(re: string, unicode = true, extended = false): part {
 				stack.push({type: 'group', group: group, tos: curr});
 				curr = [];
 				break;
+			}
 
 			case ')': {
 				const top = closeAlt();
@@ -658,8 +660,8 @@ export function toRegExpString(part: part): string {
 						atomic:		'>'
 					}[opts];
 				} else if ((opts.i ?? opts.m ?? opts.s) !== undefined) {
-					let posflags = (opts.i ? 'i' : '') + (opts.m ? 'm' : '') + (opts.s ? 's' : '');
-					let negflags = (opts.i === false ? 'i' : '') + (opts.m === false ? 'm' : '') + (opts.s === false ? 's' : '');
+					const posflags = (opts.i ? 'i' : '') + (opts.m ? 'm' : '') + (opts.s ? 's' : '');
+					const negflags = (opts.i === false ? 'i' : '') + (opts.m === false ? 'm' : '') + (opts.s === false ? 's' : '');
 					header = `${posflags}${negflags ? '-' : ''}${negflags}:`;
 				}
 			}
@@ -903,7 +905,7 @@ function buildNFA(part: part): {start: NFAState, accept: NFAState} {
 		}
 
 		if (Array.isArray(p)) {
-			let current = build(p[0]);
+			const current = build(p[0]);
 			for (let i = 1; i < p.length; i++) {
 				const next = build(p[i]);
 				current.accept.epsilonTransitions.push(next.start);
@@ -1023,7 +1025,6 @@ function NFAtoDFA(nfaStart: NFAState): DFAState {
 	collectStates(nfaStart);
 
 	const dfaStates	= new Map<string, DFAState>();
-	let dfaStateId = 0;
 
 	function stateSetKey(states: Set<number>): string {
 		return [...states].sort().join(',');

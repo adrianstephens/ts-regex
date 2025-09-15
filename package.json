@@ -1,6 +1,6 @@
 {
 	"name": "@isopodlabs/regex",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Regex utilities.",
 	"repository": {
 		"type": "git",
@@ -25,5 +25,8 @@
 		"eslint": "^9.21.0",
 		"typescript": "^5.8.2",
 		"typescript-eslint": "^8.26.0"
+	},
+	"dependencies": {
+		"@isopodlabs/utilities": "^1.5.5"
 	}
 }
