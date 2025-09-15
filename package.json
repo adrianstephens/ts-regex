@@ -1,0 +1,29 @@
+{
+	"name": "@isopodlabs/regex",
+	"version": "0.0.0",
+	"description": "Regex utilities.",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/adrianstephens/ts-regex.git"
+	},
+	"main": "dist/regex.js",
+	"files": [
+		"dist/**/*.{js,d.ts}",
+		"README.md"
+	],
+	"scripts": {
+		"build": "tsc"
+	},
+	"keywords": [
+		"typescript",
+		"regex"
+	],
+	"author": "Adrian Stephens",
+	"license": "MIT",
+	"devDependencies": {
+		"@types/node": "^22.13.8",
+		"eslint": "^9.21.0",
+		"typescript": "^5.8.2",
+		"typescript-eslint": "^8.26.0"
+	}
+}
