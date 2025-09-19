@@ -6,13 +6,15 @@
 		"type": "git",
 		"url": "git+https://github.com/adrianstephens/ts-regex.git"
 	},
-	"main": "dist/regex.js",
+	"main": "dist/parse.js",
 	"files": [
 		"dist/**/*.{js,d.ts}",
 		"README.md"
 	],
 	"scripts": {
-		"build": "tsc"
+		"build": "tsc",
+	    "generate": "ts-node scripts/generate.ts"
+
 	},
 	"keywords": [
 		"typescript",

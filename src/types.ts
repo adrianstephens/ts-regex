@@ -1,0 +1,212 @@
+import { bits } from "@isopodlabs/utilities";
+
+export interface options {
+	i?: boolean;	// ignoreCase
+	m?: boolean;	// multiLine
+	s?: boolean;	// dotAll
+	u?: boolean;	// unicode
+	v?: boolean;	// unicodeSets
+	x?: boolean;	// extended
+	g?: boolean;	// global
+};
+
+export class characterClass extends bits.SparseBits {
+	type = 'class' as const;
+
+	test(char: string): boolean {
+		return this.has(char.charCodeAt(0));
+	}
+
+	mutable(): MutableCharacterClass {
+		return new MutableCharacterClass(true).selfIntersect(this);
+	}
+
+	isNegated(): boolean {
+		return !!this.undef;
+	}
+
+	toString(): string {
+		let s = this.undef ? '^' : '';
+		for (const i in this.bits) {
+			const b = this.bits[i] ^ this.undef;
+			const c0 = +i * 32;
+
+			for (let j = 0; j < 32; j++) {
+				if (b & (1 << j)) {
+					const c1 = c0 + j;
+					while (j < 32 && (b & (1 << j)))
+						j++;
+					const c2 = c0 + j - 1;
+					s += String.fromCodePoint(c1).replace(/[-\\\]]/g, '\\$&');
+					if (c1 !== c2)
+						s += '-' + String.fromCodePoint(c2).replace(/[-\\\]]/g, '\\$&');
+				}
+			}
+		}
+		return s;
+	}
+};
+
+export class MutableCharacterClass extends characterClass {
+	setChar(char: string) {
+		this.set(char.charCodeAt(0));
+	}
+
+	setString(c: string) {
+		for (let i = 0; i < c.length; i++)
+			this.set(c.charCodeAt(i));
+		return this;
+	}
+	clearString(c: string) {
+		for (let i = 0; i < c.length; i++)
+			this.clear(c.charCodeAt(i));
+		return this;
+	}
+
+}
+
+
+// characterClass helpers
+export function range(from: string, to: string) {
+    return new MutableCharacterClass(false).setRange(from.charCodeAt(0), to.charCodeAt(0) + 1);
+}
+
+export function chars(chars: string) {
+	return new MutableCharacterClass(false).setString(chars);
+}
+
+export function union(...classes: characterClass[]) {
+    const result = new MutableCharacterClass(false);
+    for (const cls of classes)
+        result.selfUnion(cls);
+    return result;
+}
+
+// Common character class constants and ranges
+export const any		: characterClass = new characterClass(true);//.clearString('\n\r\u2028\u2029');
+export const digit		: characterClass = range('0', '9');  //digit
+export const lower		: characterClass = range('a', 'z');
+export const upper		: characterClass = range('A', 'Z');
+export const alpha		: characterClass = lower.union(upper);
+export const alnum		: characterClass = alpha.union(digit);
+export const word		: characterClass = alnum.union(chars('_'));  //word
+export const whitespace	: characterClass = chars(' \t\r\n\f\v');  //whitespace
+export const hex		: characterClass = digit.union(chars('abcdefABCDEF'));
+export const octal		: characterClass = range('0', '7');
+
+export function text(c: string): string {
+	return c;
+}
+export function concatenation(parts: part[]): part[] | part {
+	return parts.length === 1 ? parts[0] : parts;
+}
+
+export interface alternation {
+	type: 'alt';
+	parts: part[];
+}
+export function alternation(parts: part[]): alternation | part {
+	return	parts.length === 1 ? parts[0]
+		: 	parts.length === 2 && !parts[1] ? optional(parts[0])
+		:	{type: 'alt', parts};
+}
+
+type noncaptureOptions = 'ahead' | 'behind' | 'neg_ahead' | 'neg_behind' | 'atomic' | {i?: boolean; m?: boolean; s?: boolean};
+export interface noncapture {
+	type: 'noncapture';
+	part: part;
+	options?: noncaptureOptions
+};
+export function noncapture(part: part, options?: noncaptureOptions): noncapture {
+	return {type: 'noncapture', part, options};
+}
+export function lookAhead(part: part)		{ return noncapture(part, 'ahead'); }
+export function negLookAhead(part: part)	{ return noncapture(part, 'neg_ahead'); }
+export function lookBehind(part: part)		{ return noncapture(part, 'behind'); }
+export function negLookBehind(part: part)	{ return noncapture(part, 'neg_behind'); }
+
+export interface capture {
+	type: 'capture';
+	name?: string;
+	part: part;
+}
+export function capture(part: part, name?: string): capture {
+	return {type: 'capture', part, name};
+}
+
+export type quantifiedMod = 'greedy' | 'lazy' | 'possessive';
+export interface quantified {
+	type: 'quantified';
+	part: part;
+	min: number;
+	max: number; // -1 = inf
+	mod: quantifiedMod;
+}
+export function repeatFrom(part: part, min: number, max = -1, mod: quantifiedMod = 'greedy'): quantified {
+	return {type: 'quantified', part, min, max, mod};
+}
+export function repeat(part: part, n: number, mod: quantifiedMod = 'greedy'): quantified {
+	return {type: 'quantified', part, min: n, max: n, mod};
+}
+export function zeroOrMore(part: part, mod: quantifiedMod = 'greedy')	{ return repeatFrom(part, 0, -1, mod); }
+export function oneOrMore(part: part, mod: quantifiedMod = 'greedy')	{ return repeatFrom(part, 1, -1, mod); }
+export function optional(part: part, mod: quantifiedMod = 'greedy')		{ return repeatFrom(part, 0, 1, mod); }
+
+export interface boundary {
+	type: 'wordbound' | 'nowordbound' | 'inputboundstart' | 'inputboundend';
+}
+export function boundary(type: boundary['type']): boundary {
+	return {type};
+}
+export const wordBoundary 		= boundary('wordbound');
+export const nonWordBoundary 	= boundary('nowordbound');
+export const startAnchor		= boundary('inputboundstart');
+export const endAnchor 			= boundary('inputboundend');
+
+export interface reference {
+	type: 'reference';
+	value: number|string;
+}
+export function reference(value: number|string): reference {
+	return {type: 'reference', value};
+}
+
+export function anchored(part: part): part {
+	return [startAnchor, part, endAnchor];
+}
+
+export interface unicode {
+	type: 'unicode' | 'notunicode';
+	property: string;
+}
+
+type _part = alternation | noncapture | capture | characterClass | unicode | quantified | boundary | reference;
+export type part = string | part[] | _part;
+
+/*
+function is0<T extends part0['type']>(part: part, type: T): part is Extract<part0, { type: T }> {
+	return typeof part !== 'string' && !Array.isArray(part) && part.type === type;
+}
+*/
+export function type(part: part) {
+	return typeof part === 'string'	? 'text'
+			: Array.isArray(part)	? 'concat'
+			: part.type;
+}
+
+export function is<T extends _part['type']|'text'|'concat'>(part: part, istype: T): part is (T extends 'text' ? string : T extends 'concat' ? part[] : Extract<_part, { type: T }>) {
+	return type(part) === istype;
+	//return typeof part === 'string'	? type === 'text'
+	//		: Array.isArray(part)	? type === 'concat'
+	//		: part.type === type;
+}
+
+export function typed(part: part):
+    | { type: 'text', part: string }
+    | { type: 'concat', part: part[] }
+    | _part
+{
+    return typeof part === 'string'	? { type: 'text', part }
+    	: Array.isArray(part)		? { type: 'concat', part }
+    	: part;
+}

@@ -1,5 +1,4 @@
-import { SparseBits } from '../src/bits';
-import * as regex from '../src/regex';
+import * as regex from '../src/index';
 
 export interface equal<T> {
 	equal(b: T): boolean;
@@ -20,26 +19,8 @@ export function test(name: string, fn: ()=>void) {
 	console.log("finished: " + name);
 }
 
-//test('make', () => {
-//}
-
-const sp = new SparseBits(false);
-sp.set(42);
-sp.set(1000);
-sp.set(10000);
-/*
-sp.selfNot();
-
-for (let i = sp.next(-1, false); i !== -1; i = sp.next(i, false)) {
-	console.log(i);
-}
-*/
-//sp.selfNot();
-
-for (let i = sp.next(-1); i !== -1; i = sp.next(i)) {
-	console.log(i);
-}
-
+const p = regex.parse('\\p{AHex}+');
+console.log(regex.toRegExpString(p));
 
 const x = regex.parse('[a-z]+[^\\D]+');
 //const x = regex.parse('.*[^\\D]+');
@@ -60,6 +41,7 @@ console.log(regex.toRegExpString(x3));
 
 //const x4 = regexp.parse("[😀-😂]", false);
 const x5 = regex.parse("[😀-😂]", true);
+console.log(regex.toRegExpString(x5));
 
 const t = regex.anchored(regex.capture([
 	'test', x, x2,

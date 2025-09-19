@@ -14,6 +14,13 @@
             "preLaunchTask": "npm: build",
 			"console": "integratedTerminal"
         },
+		{
+            "type": "node-terminal",
+            "name": "Debug Generate",
+            "request": "launch",
+            "command": "ts-node ./scripts/generate.ts",
+            "cwd": "${workspaceFolder}"
+        }
 
 	]
 }
