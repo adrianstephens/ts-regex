@@ -192,7 +192,7 @@ function downloadString(url: string): Promise<string> {
 }
 
 function makeBitset(data: number[]) {
-	const r = new bits.SparseBits();
+	const r = new bits.SparseBits2();
 	for (const i of data)
 		r.set(i);
 	return r;
@@ -201,7 +201,7 @@ function makeBitset(data: number[]) {
 async function getTable(url: string) {
 	const data	= await downloadString(url);
 	const re	= /^(\w+)(?:..(\w+))?\s+;\s+(\w+)/;
-	const table: Record<string, bits.SparseBits> = {};
+	const table: Record<string, bits.SparseBits2> = {};
 
 	data.split('\n').forEach(line => {
 		if (!line || line.startsWith('#'))
@@ -209,7 +209,7 @@ async function getTable(url: string) {
 
 		const m = re.exec(line);
 		if (m) {
-			const entry = (table[m[3]] ??= new bits.SparseBits());
+			const entry = (table[m[3]] ??= new bits.SparseBits2());
 			const start = parseInt(m[1], 16);
 			if (m[2]) {
 				const end = parseInt(m[2], 16);
@@ -283,7 +283,7 @@ class TreeNode extends Map<number, TreeNode> {
 }
 
 interface BitsetNode<T> {
-	bits: bits.SparseBits;
+	bits: bits.SparseBits2;
 	value: T;
 }
 
@@ -334,10 +334,10 @@ async function getEmojiTable(url: string) {
 
 interface DerivedSet {
 	bases: Set<string>;
-	extra: bits.SparseBits;
+	extra: bits.SparseBits2;
 }
 
-function findOptimalSubsets(sets: Record<string, bits.SparseBits>) {
+function findOptimalSubsets(sets: Record<string, bits.SparseBits2>) {
 	const names = Object.keys(sets);
 	
 	// Pre-compute all subset relationships O(n²) once
@@ -376,7 +376,7 @@ function findOptimalSubsets(sets: Record<string, bits.SparseBits>) {
 /*
 		const baseSet = sets[bestSet];
 		for (const name of remaining.keys()) {
-			//const derived = expressions[name] ??= { bases: new Set<string>(), extra: new bits.SparseBits() };
+			//const derived = expressions[name] ??= { bases: new Set<string>(), extra: new bits.SparseBits2() };
 			if (name !== bestSet && sets[name].contains(baseSet))
 				(basesPerSet[name] ??= new Set()).add(bestSet);
 		}
@@ -391,7 +391,7 @@ function findOptimalSubsets(sets: Record<string, bits.SparseBits>) {
 
 	return Object.fromEntries(names.map(name => {
 		const set	= sets[name];
-		const extra = bits.SparseBits.fromEntries(set.entries());
+		const extra = bits.SparseBits2.fromEntries(set.entries());
 		const bases = basesPerSet[name];
 		if (bases) {
 			for (const i of bases) {
@@ -411,7 +411,7 @@ function findOptimalSubsets(sets: Record<string, bits.SparseBits>) {
 
 function makeNameTree(names: string[]) {
 
-	function childPrefixes(set: bits.SparseBits, from: number) {
+	function childPrefixes(set: bits.SparseBits2, from: number) {
 		const children: prefixTree = {};
 		for (const i of set.where(true)) {
 			const name = names[i];
@@ -420,7 +420,7 @@ function makeNameTree(names: string[]) {
 				s = name.indexOf('-', from);
 			if (s > 0) {
 				const prefix = name.slice(0, s);
-				(children[prefix] ??= new bits.SparseBits()).set(i);
+				(children[prefix] ??= new bits.SparseBits2()).set(i);
 			}
 		}
 
@@ -447,7 +447,7 @@ function makeNameTree(names: string[]) {
 // Output
 //-----------------------------------------------------------------------------
 
-function bitsetToString(set: bits.SparseBits) {
+function bitsetToString(set: bits.SparseBits2) {
 	return '{' + set.entries().map(([i, v]) => `${i}:0x${(v + 0x200000000).toString(16).slice(-8)}`).join(',') + '}';
 }
 function rangesToString(ranges: number[][]) {
@@ -468,7 +468,7 @@ function derivedToString(name: string, set: DerivedSet) {
 	return name + ': ' + bitsetString;
 }
 
-function bitsetToString2(set: bits.SparseBits) {
+function bitsetToString2(set: bits.SparseBits2) {
 	const ranges = [...set.ranges()];//.map(([start, end]) => ({ start, end }));
 	return ranges.length < set.keys().length
 		? rangesToString(ranges)
@@ -490,12 +490,12 @@ function treeToString(node: BitsetTree, depth = 0): string {
 */
 
 
-type prefixNode = bits.SparseBits & {children?: prefixTree};
+type prefixNode = bits.SparseBits2 & {children?: prefixTree};
 type prefixTree = Record<string, prefixNode>;
 
 function prefixesToString2(names: string[], node: prefixNode, len = 0, depth = 0): string {
 	const children = node.children;
-	const used = bits.SparseBits.fromEntries(node.entries());
+	const used = bits.SparseBits2.fromEntries(node.entries());
 
 	if (children) {
 		for (const c of Object.values(children))
@@ -525,7 +525,7 @@ function aliasesToString(aliases: Record<string, string>, objName: string) {
 	}\n});\n\n`;
 }
 
-function totalSize(sets: bits.SparseBits[]) {
+function totalSize(sets: bits.SparseBits2[]) {
 	return sets.reduce((a, b) => a + b.keys().length, 0);
 }
 
@@ -551,14 +551,14 @@ async function run(exportNames: boolean, exportSequences: boolean) {
 		unicode[index] = char;
 	});
 
-	function valuesBy(key: keyof UnicodeChar): Record<string, bits.SparseBits> {
+	function valuesBy(key: keyof UnicodeChar): Record<string, bits.SparseBits2> {
 		return unicode.reduce((acc, item, index) => {
 			const value = item[key];
 			if (value) {
-				(acc[value] ??= new bits.SparseBits()).set(index);
+				(acc[value] ??= new bits.SparseBits2()).set(index);
 			}
 			return acc;
-		}, {} as Record<string, bits.SparseBits>);
+		}, {} as Record<string, bits.SparseBits2>);
 	}
 
 	// Merge all property sources
@@ -576,8 +576,8 @@ async function run(exportNames: boolean, exportSequences: boolean) {
 	};
 	
 	const binaryProps = {...Object.fromEntries(Object.entries(props).filter(i => supported.has(i[0]))),
-		ASCII:			new bits.SparseBits().setRange(0, 128),
-		Any:			new bits.SparseBits().setRange(0, 0x110000),
+		ASCII:			new bits.SparseBits2().setRange(0, 128),
+		Any:			new bits.SparseBits2().setRange(0, 0x110000),
 		Assigned:		makeBitset(unicode.map((_, i) => i).filter(i => unicode[i])),//lazyUnion('Any'),
 		Bidi_Mirrored:	makeBitset(unicode.map((char, i) => char?.Bidi_Mirrored === 'Y' ? i : -1).filter(i => i >= 0)),
 	};
@@ -586,7 +586,7 @@ async function run(exportNames: boolean, exportSequences: boolean) {
 	const gc = enumProps.General_Category;
 	for (const [k, v] of Object.entries(gc)) {
 		if (k.length === 2)
-			(gc[k[0]] ??= new bits.SparseBits()).selfUnion(v);
+			(gc[k[0]] ??= new bits.SparseBits2()).selfUnion(v);
 	}
 	
 	const allSets = {

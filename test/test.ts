@@ -8,54 +8,78 @@ export function expect<T extends equal<T>>(v: T) {
 	return {
 		toEqual(v2: T) {
 			if (!v.equal(v2))
-				console.log("fail");
+				console.log('fail');
 		}
 	};
 }
 
-export function test(name: string, fn: ()=>void) {
-	console.log("testing: " + name);
+export function test(name: string, fn: () => void) {
+	console.log('testing: ' + name);
 	fn();
-	console.log("finished: " + name);
+	console.log('finished: ' + name);
 }
 
-const p = regex.parse('\\p{AHex}+');
-console.log(regex.toRegExpString(p));
+// Email validation with backreferences and lookarounds
+const emailPattern = `^(?=.{1,64}@.{1,255}$)([a-zA-Z0-9._-]+)@([a-zA-Z0-9.-]+)\\.([a-zA-Z]{2,})(?<!\\.)$`;
 
-const x = regex.parse('[a-z]+[^\\D]+');
-//const x = regex.parse('.*[^\\D]+');
+// Test cases:
+const validEmails = ['user@example.com', 'test.email@domain.org', 'user123@sub.domain.co.uk'];
 
-const dfa = regex.regexToDFA(x);
-regex.runDFA(dfa, 'hello123world');
+const invalidEmails = [
+	'user@.com',	 // starts with dot
+	'user@domain.',	 // ends with dot
+	'user@domain.c', // TLD too short
+	'@domain.com',	 // missing username
+	'user@',		 // missing domain
+];
 
-console.log(x);
+// Complex pattern with captures, quantifiers, alternation, and boundaries
+const complexPattern = `^(?i:hello|hi)\\s+(\\w+)(?=\\s+world)\\s+world\\b(?<!bad world)$`;
 
-const s = regex.toRegExpString(x);
-console.log(s);
+// Test cases:
+const testStrings = [
+	'Hello john world',	   // should match (case insensitive)
+	'hi mary world',	   // should match
+	'hello bob bad world', // should NOT match (negative lookbehind)
+	'hey alice world',	   // should NOT match (wrong greeting)
+];
 
-const x2 = regex.parse('this');//|that
-console.log(regex.toRegExpString(x2));
+// Backreference pattern
+const duplicatePattern = `^(\\w+)\\s+\\1$`;
 
-const x3 = regex.parse('this(that|other)*end');
-console.log(regex.toRegExpString(x3));
+// Test cases:
+const duplicateTests = [
+	'hello hello', // should match
+	'test test',   // should match
+	'hello world', // should NOT match
+];
 
-//const x4 = regexp.parse("[😀-😂]", false);
-const x5 = regex.parse("[😀-😂]", true);
-console.log(regex.toRegExpString(x5));
+// Multiline pattern with anchors
+const multilinePattern = `^line\\d+$`;
 
-const t = regex.anchored(regex.capture([
-	'test', x, x2,
-	regex.parse('[A]'),
-	x2, x3,
-	regex.repeatFrom(regex.chars('abcd'), 1),
-	'test2',
-	regex.parse('cat|catch'),
-	regex.parse('catch|cat'),
-	regex.parse('a|b|c|hello|world|x|y|z'),
-	regex.reference(1),
-	regex.reference('name')
-], 'name'));
-console.log(regex.toRegExpString(t));
+// Test with multiline flag:
+const multilineText = `line1
+line2
+line3`;
 
-const t2 = regex.optimize(t);
-console.log(regex.toRegExpString(t2));
+
+const testRegex = regex.DFA.fromString('a+', {u: true, x: true});
+for (const str of ['a', 'aa', 'aaa', 'b', 'ab', 'aab', 'aaaab']) {
+	const end = testRegex.run(str);
+	if (end !== -1) {
+		console.log(`Matched: ${str} -> ${str.slice(0, end)}`);
+	}
+}
+
+
+const emailRegex = regex.NFA.fromString(emailPattern, {i: true});
+for (const email of validEmails) {
+	if (!emailRegex.run(email)) {
+		console.log(`Failed to match valid email: ${email}`);
+	}
+}
+for (const email of invalidEmails) {
+	if (emailRegex.run(email)) {
+		console.log(`Incorrectly matched invalid email: ${email}`);
+	}
+}

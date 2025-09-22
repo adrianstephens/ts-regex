@@ -10,19 +10,20 @@ export interface options {
 	g?: boolean;	// global
 };
 
-export class characterClass extends bits.SparseBits {
+export class characterClass extends bits.SparseBits2 {
 	type = 'class' as const;
 
-	test(char: string): boolean {
-		return this.has(char.charCodeAt(0));
-	}
-
 	mutable(): MutableCharacterClass {
-		return new MutableCharacterClass(true).selfIntersect(this);
+		return new MutableCharacterClass([], true).selfIntersect(this);
 	}
 
 	isNegated(): boolean {
 		return !!this.undef;
+	}
+
+	testChar(c: string): boolean {
+		const code = c.codePointAt(0);
+		return code !== undefined && this.test(code);
 	}
 
 	toString(): string {
@@ -62,28 +63,27 @@ export class MutableCharacterClass extends characterClass {
 			this.clear(c.charCodeAt(i));
 		return this;
 	}
-
 }
-
 
 // characterClass helpers
 export function range(from: string, to: string) {
-    return new MutableCharacterClass(false).setRange(from.charCodeAt(0), to.charCodeAt(0) + 1);
+    return new MutableCharacterClass().setRange(from.charCodeAt(0), to.charCodeAt(0) + 1);
 }
 
 export function chars(chars: string) {
-	return new MutableCharacterClass(false).setString(chars);
+	return new MutableCharacterClass().setString(chars);
 }
 
 export function union(...classes: characterClass[]) {
-    const result = new MutableCharacterClass(false);
+    const result = new MutableCharacterClass();
     for (const cls of classes)
         result.selfUnion(cls);
     return result;
 }
 
 // Common character class constants and ranges
-export const any		: characterClass = new characterClass(true);//.clearString('\n\r\u2028\u2029');
+export const any		: characterClass = new characterClass([], true);//.clearString('\n\r\u2028\u2029');
+export const eol		: characterClass = chars('\n\r\u2028\u2029');
 export const digit		: characterClass = range('0', '9');  //digit
 export const lower		: characterClass = range('a', 'z');
 export const upper		: characterClass = range('A', 'Z');
@@ -145,12 +145,10 @@ export interface quantified {
 export function repeatFrom(part: part, min: number, max = -1, mod: quantifiedMod = 'greedy'): quantified {
 	return {type: 'quantified', part, min, max, mod};
 }
-export function repeat(part: part, n: number, mod: quantifiedMod = 'greedy'): quantified {
-	return {type: 'quantified', part, min: n, max: n, mod};
-}
-export function zeroOrMore(part: part, mod: quantifiedMod = 'greedy')	{ return repeatFrom(part, 0, -1, mod); }
-export function oneOrMore(part: part, mod: quantifiedMod = 'greedy')	{ return repeatFrom(part, 1, -1, mod); }
-export function optional(part: part, mod: quantifiedMod = 'greedy')		{ return repeatFrom(part, 0, 1, mod); }
+export function repeat(part: part, n: number, mod: quantifiedMod = 'greedy')	{ return repeatFrom(part, n, n, mod); }
+export function zeroOrMore(part: part, mod: quantifiedMod = 'greedy')			{ return repeatFrom(part, 0, -1, mod); }
+export function oneOrMore(part: part, mod: quantifiedMod = 'greedy')			{ return repeatFrom(part, 1, -1, mod); }
+export function optional(part: part, mod: quantifiedMod = 'greedy')				{ return repeatFrom(part, 0, 1, mod); }
 
 export interface boundary {
 	type: 'wordbound' | 'nowordbound' | 'inputboundstart' | 'inputboundend';

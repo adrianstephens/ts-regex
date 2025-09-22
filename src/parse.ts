@@ -210,7 +210,7 @@ export function parse(re: string, unicode = true, extended = false): part {
 	function charClass() {
 		const neg = check('^');
 
-		const cs = new characterClass(false);
+		const cs = new characterClass();
 		if (re[i] === ']' || re[i] === '-')
 			cs.set(re.charCodeAt(i++));
 
@@ -234,7 +234,7 @@ export function parse(re: string, unicode = true, extended = false): part {
 				} else if (check('&&')) {
 					let to = character();
 					if (typeof to === 'number') {
-						const t = new characterClass(false);
+						const t = new characterClass();
 						t.set(to);
 						to = t;
 					}
@@ -244,7 +244,7 @@ export function parse(re: string, unicode = true, extended = false): part {
 				} else if (check('~~')) {
 					let to = character();
 					if (typeof to === 'number') {
-						const t = new characterClass(false);
+						const t = new characterClass();
 						t.set(to);
 						to = t;
 					}
@@ -672,7 +672,7 @@ export function optimize(part: part): part {
 			for (const part of unique) {
 				if (typeof part === 'string' && part.length === 1) {
 					if (!cs)
-						cs = new MutableCharacterClass(false);
+						cs = new MutableCharacterClass();
 					cs.setChar(part);
 				} else if (is(part, 'class')) {
 					if (!cs)
