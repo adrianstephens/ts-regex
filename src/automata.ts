@@ -1,35 +1,109 @@
 import { any, word, eol, part } from './types';
-import { parse } from './parse';
+import * as parse from './parse';
+import { bits } from '@isopodlabs/utilities';
+
+type SparseBits = bits.SparseBits;
+const { SparseBits } = bits;
 
 const anyButEOL = any.intersect(eol.complement()); // any except EOL
 
+//-----------------------------------------------------------------------------
+//	EmptyOp
+//-----------------------------------------------------------------------------
+/*
+// Bit flags for empty-width specials
+enum Empty {
+	None 			= 0,
+	WordBoundary 	= 1 << 0,		// \b - word boundary
+	NonWordBoundary	= 1 << 1,		// \B - not \b
+	BeginText 		= 1 << 2,		// \A - beginning of text
+	EndText 		= 1 << 3,		// \z - end of text
+	BeginLine 		= 1 << 4,		// ^  - beginning of line
+	EndLine 		= 1 << 5,		// $  - end of line
+	BeginWord 		= 1 << 6,		// \< - beginning of word
+	EndWord 		= 1 << 7,		// \> - end of word
+	Bits 			= 8,
+
+	// search only
+	Anchor			= 1 << 8,
+	Longest			= 1 << 9,
+//	NoEndLines		= 1 << 10,		// do not match $ to \n
+
+	Never		= WordBoundary | NonWordBoundary,
+	Begins		= BeginText | BeginLine | BeginWord,
+	Ends		= Begins << 1,
+};
+
+//reverse begin/end flags
+function	reverse(op: Empty): Empty			{ return op & ~(Empty.Begins|Empty.Ends) | ((op & Empty.Begins) << 1) | ((op & Empty.Ends) >> 1); }
+function	check(a: Empty, b: Empty): boolean	{ return !(a & ~b); }
+
+// Returns the set of EmptyOp. flags that are in effect at position p
+function EmptyFlags(enable: Empty, p: string, pos: number): Empty {
+	let		flags		= Empty.None;
+	let		was_word	= false;
+	let		is_word		= false;
+
+	// ^ \A \<
+	if (enable & Empty.BeginText) {
+		flags |= Empty.BeginText | Empty.BeginLine;
+	} else {
+		if ((enable & Empty.BeginWord) && p[pos]) {
+			const c = p[pos - 1];
+			if ((enable & Empty.BeginLine) && c == '\n')
+				flags |= Empty.BeginLine;
+			was_word = word.testChar(c);
+		}
+	}
+
+	// $ \z \>
+	if (enable & Empty.EndText) {
+		flags |= Empty.EndText | Empty.EndLine;
+	} else {
+		if ((enable & Empty.EndWord)) {
+			const c = p[pos];
+			if ((enable & Empty.EndLine) && (c == '\r' || c == '\n'))
+				flags |= Empty.EndLine;
+			is_word	= word.testChar(c);
+		}
+	}
+
+	// \b \B
+	return flags | (is_word == was_word ? Empty.NonWordBoundary : (Empty.WordBoundary | (is_word ? Empty.BeginWord : Empty.EndWord)));
+}
+*/
 //-----------------------------------------------------------------------------
 // Thompson NFA
 //-----------------------------------------------------------------------------
 
 interface options {i?: boolean; m?: boolean; s?: boolean};
 
+interface NFATransition {
+	mask: SparseBits;
+	state: NFAState;
+}
+
 interface NFAState {
-	id: number;
-	epsilonTransitions: NFAState[];			// ε-transitions
-	onEnter?: (str: string, pos: number, captures: Record<number|string, [number, number]>) => [next: NFAState, newPos: number] | void;
-	isAccepting: boolean;
-	lazy?: boolean;
-	//accept?: NFAState; // for post checks
+	onEnter?:	(str: string, pos: number, captures: Record<number|string, [number, number]>) => [next: NFAState, newPos: number] | void;
+	transition?: NFATransition;		// for subset construction
+	epsilons:	NFAState[];			// ε-transitions
+	accepting?:	boolean;
+	lazy?:		boolean;
+	accept?:	NFAState;			// for traversal
 	//part?: part; // for debugging
 }
 
 export function buildNFA(part: part, options: options = {i:false, m:false, s:false}): {start: NFAState, accept: NFAState} {
 	let captureId = 0;
-	let stateId = 0;
+	//let stateId = 0;
 
 	function newState(): NFAState {
-		return {id: stateId++, epsilonTransitions: [], isAccepting: false};
+		return {/*id: stateId++, */epsilons: []};
 	}
 
 	function build(p: part, start: NFAState, _accept?: NFAState): NFAState {
 		const accept = _accept ?? newState();
-		//start.accept = accept;
+		start.accept = accept;
 		//start.part = p;
 		
 		if (typeof p === 'string') {
@@ -39,12 +113,20 @@ export function buildNFA(part: part, options: options = {i:false, m:false, s:fal
 					if (str.substring(pos, pos + p.length).toLowerCase() === s)
 						return [accept, pos + p.length];
 				};
+
 			} else {
 				start.onEnter = (str, pos, _captures) => {
 					if (str.substring(pos, pos + p.length) === p)
 						return [accept, pos + p.length];
 				};
 			}
+
+			for (const char of p) {
+				const next = (char === p[p.length - 1]) ? accept : newState();
+				start.transition = {mask: SparseBits.fromIndices(char.charCodeAt(0)), state: next};
+				start = next;
+			}
+
 			return accept;
 		}
 
@@ -60,7 +142,7 @@ export function buildNFA(part: part, options: options = {i:false, m:false, s:fal
 				for (const alt of p.parts) {
 					const altStart = newState();
 					build(alt, altStart, accept);
-					start.epsilonTransitions.push(altStart);
+					start.epsilons.push(altStart);
 				}
 				return accept;
 			}
@@ -73,7 +155,7 @@ export function buildNFA(part: part, options: options = {i:false, m:false, s:fal
 				if (p.mod === 'possessive') {
 					const fragStart = newState();
 					const fragAccept = build(p.part, fragStart);
-					fragAccept.isAccepting = true;
+					fragAccept.accepting = true;
 
 					if (p.max === -1) {
 						start.onEnter = (str, pos, captures) => {
@@ -101,13 +183,13 @@ export function buildNFA(part: part, options: options = {i:false, m:false, s:fal
 					} else {
 						// Finite: add optional copies
 						for (let i = p.min; i < p.max; i++) {
-							start.epsilonTransitions.push(accept); // can skip
+							start.epsilons.push(accept); // can skip
 							start = build(p.part, start);
 							if (p.mod ==='lazy')
 								start.lazy = true;
 						}
 					}
-					start.epsilonTransitions.push(accept);
+					start.epsilons.push(accept);
 				}
 
 				return accept;
@@ -124,6 +206,8 @@ export function buildNFA(part: part, options: options = {i:false, m:false, s:fal
 						}
 					}
 				};
+
+				start.transition = {mask: set, state: accept};
 				return accept;
 			}
 
@@ -168,7 +252,7 @@ export function buildNFA(part: part, options: options = {i:false, m:false, s:fal
 						const fragStart = newState();
 						const fragAccept = build(p.part, fragStart);
 						// Lookaround fragments need accepting states for backtrackSimple
-						fragAccept.isAccepting = true;
+						fragAccept.accepting = true;
 						
 						if (p.options === 'ahead' || p.options === 'neg_ahead') {
 							// Lookahead: check if pattern matches starting at current position
@@ -201,19 +285,34 @@ export function buildNFA(part: part, options: options = {i:false, m:false, s:fal
 				}
 
 			case 'capture': {
-				const id = p.name ?? ++captureId;
-				start.onEnter = (str, pos, captures) => {
-					captures[id] = [pos, -1];
-				};
+				const fragStart = newState();
+				const fragAccept = build(p.part, fragStart);
+				const id = p.name || ++captureId;
+
+			    if (canDFA(fragStart)) {
+					// Convert to DFA and wrap in an NFA state
+					fragAccept.accepting = true;
+					const dfa = NFAtoDFA(fragStart);
+					start.onEnter = (str, pos, captures) => {
+						captures[id] = [pos, -1];
+						const end = runDFA2(dfa, str, pos);
+						if (end >= 0)
+							return [accept, end];
+					};
+				} else {
+					start.onEnter = (str, pos, captures) => {
+						captures[id] = [pos, -1];
+						return [fragStart, pos];
+					};
+				}
+
 				accept.onEnter = (str, pos, captures) => {
 					if (captures[id])
 						captures[id][1] = pos;
 				};
 
-				const fragStart = newState();
-				const fragAccept = build(p.part, fragStart);
-				start.epsilonTransitions.push(fragStart);
-				fragAccept.epsilonTransitions.push(accept);
+
+				fragAccept.epsilons.push(accept);
 				return accept;
 			}
 
@@ -236,7 +335,17 @@ export function buildNFA(part: part, options: options = {i:false, m:false, s:fal
 
 	const start = newState();
 	const accept = build(part, start);
-	accept.isAccepting = true;
+	accept.accepting = true;
+
+	if (canDFA(start)) {
+		// Convert to DFA and wrap in an NFA state
+		const dfa = NFAtoDFA(start);
+		start.onEnter = (str, pos, _captures) => {
+			const end = runDFA2(dfa, str, pos);
+			if (end >= 0)
+				return [accept, end];
+		};
+	}
 
 	return {start, accept};
 }
@@ -246,10 +355,10 @@ export function runNFASimple(nfa: NFAState, str: string, pos: number): number {
 	function recurse(state: NFAState, pos: number): number {
 
 		// Linear execution for states without epsilon transitions
-		while (state.epsilonTransitions.length === 0) {
+		while (state.epsilons.length === 0) {
 			const redirect = state.onEnter?.(str, pos, {});
 			if (!redirect)
-				return state.isAccepting ? pos : -1;
+				return state.accepting ? pos : -1;
 
 			state	= redirect[0];
 			pos		= redirect[1];
@@ -257,9 +366,10 @@ export function runNFASimple(nfa: NFAState, str: string, pos: number): number {
 
 		if (state.lazy) {
 			// Lazy: try epsilon transitions first (exit early)
-			for (const next of state.epsilonTransitions) {
+			for (const next of state.epsilons) {
 				const end = recurse(next, pos);
 				if (end >= 0)
+
 					return end;
 			}
 		}
@@ -273,12 +383,12 @@ export function runNFASimple(nfa: NFAState, str: string, pos: number): number {
 		}
 
 		// Check if accepting
-		if (state.isAccepting)
+		if (state.accepting)
 			return pos;
 
 		if (!state.lazy) {
 			// Try epsilon transitions last
-			for (const next of state.epsilonTransitions) {
+			for (const next of state.epsilons) {
 				const end = recurse(next, pos);
 				if (end >= 0)
 					return end;
@@ -308,12 +418,12 @@ export function runNFA(nfa: NFAState, str: string, pos = 0, captures: Record<num
 		}
 
 		// Linear execution for states without epsilon transitions
-		while (state.epsilonTransitions.length === 0) {
+		while (state.epsilons.length === 0) {
 			const redirect = state.onEnter?.(str, pos, captures);
 			if (!redirect) {
-				if (!state.isAccepting)
+				if (!state.accepting)
 					restoreCaptures();
-				return state.isAccepting ? pos : -1;
+				return state.accepting ? pos : -1;
 			}
 
 			state	= redirect[0];
@@ -322,7 +432,7 @@ export function runNFA(nfa: NFAState, str: string, pos = 0, captures: Record<num
 
 		if (state.lazy) {
 			// Lazy: try epsilon transitions first (exit early)
-			for (const next of state.epsilonTransitions) {
+			for (const next of state.epsilons) {
 				const end = recurse(next, pos, captures);
 				if (end >= 0)
 					return end;
@@ -338,12 +448,12 @@ export function runNFA(nfa: NFAState, str: string, pos = 0, captures: Record<num
 		}
 
 		// Check if accepting
-		if (state.isAccepting)
+		if (state.accepting)
 			return pos;
 
 		if (!state.lazy) {
 			// Try epsilon transitions last
-			for (const next of state.epsilonTransitions) {
+			for (const next of state.epsilons) {
 				const end = recurse(next, pos, captures);
 				if (end >= 0)
 					return end;
@@ -363,8 +473,11 @@ export class NFA {
 	constructor(public start: NFAState) {}
 	run(str: string) {
 		const captures: Record<number|string, [number, number]> = {};
-		if (runNFA(this.start, str, 0, captures) >= 0)
+		const end = runNFA(this.start, str, 0, captures);
+		if (end >= 0) {
+			captures[0] = [0, end];
 			return captures;
+		}
 	}
 
 	static fromParts(parts: part, options: options = {}) {
@@ -372,41 +485,159 @@ export class NFA {
 	}
 
 	static fromString(str: string, options: options & {u?: boolean, x?: boolean} = {}) {
-		const parts = parse(str, options.u, options.x); // validate
+		const parts = parse.parse(str, options.u, options.x); // validate
 		return new this(buildNFA(parts, options).start);
 	}
 
 }
-/*
-export function regexToNFA(part: part, options: options = {}): NFAState {
-	const seen = new Set<NFAState>();
-	function checks(state: NFAState) {
-		if (seen.has(state))
+
+//-----------------------------------------------------------------------------
+//	Deterministic Finite Automaton (DFA)
+//-----------------------------------------------------------------------------
+
+function canDFA(nfa: NFAState): boolean {
+//	return false;
+	const visited = new Set<NFAState>();
+	function visit(state: NFAState) {
+		if (visited.has(state))
+			return true;
+
+		visited.add(state);
+
+		if (state.lazy)
 			return false;
 
-		seen.add(state);
-
-		if (state.accept) {
-			checks(state.accept);
-		} else {
-			console.log("State without accept", state, state.part ? toRegExpString(state.part) : '');
+		if (state.onEnter && !state.transition) {
+			//if (state.epsilons.length > 0)
+				return false;
 		}
 
-		if (state.epsilonTransitions.length === 1 && !state.onEnter) {
-			console.log(state, state.part ? toRegExpString(state.part) : '');
-			//if (!state.isAccepting) {
-			//	console.log("Non-accepting state without transitions", state, state.part ? toRegExpString(state.part) : '');
-			//}
+		if (state.accept && !visit(state.accept))
+			return false;
+
+		for (const next of state.epsilons) {
+			if (!visit(next))
+				return false;
 		}
 
-		for (const next of state.epsilonTransitions) {
-			if (checks(next))
-				return true;
-		}
-		return false;
+		return true;
 	}
-	const nfa = buildNFA(part, options);
-	//checks(nfa.start);
-	return nfa.start;
+	return visit(nfa);
 }
-*/
+
+interface DFAState {
+	transitions:	{mask: SparseBits, state: DFAState}[];
+	accepting:		boolean;
+}
+
+// Subset Construction - convert NFA to DFA
+function NFAtoDFA(nfaStart: NFAState): DFAState {
+	const nfaStates = new Map<NFAState, number>();
+	const dfaStates	= new Map<string, DFAState>();
+
+	// Make Ids for NFA states
+	let nfaId = 0;
+	function collectStates(state: NFAState) {
+		if (!nfaStates.has(state)) {
+			nfaStates.set(state, ++nfaId);
+			if (state.transition)
+				collectStates(state.transition.state);
+			state.epsilons.forEach(collectStates);
+		}
+	}
+
+	// Epsilon closure - find all states reachable via ε-transitions
+	function epsilonClosure(states: Set<NFAState>): Set<NFAState> {
+		const closure = new Set(states);
+		const stack = [...states];
+
+		while (stack.length > 0) {
+			const state = stack.pop()!;
+			for (const next of state.epsilons) {
+				if (!closure.has(next)) {
+					closure.add(next);
+					stack.push(next);
+				}
+			}
+		}
+		return closure;
+	}
+
+	function createDFAState(states: Set<NFAState>): DFAState {
+		states = epsilonClosure(states);
+		const key = [...states].map(state => nfaStates.get(state)).sort().join(',');
+
+		if (dfaStates.has(key))
+			return dfaStates.get(key)!;
+
+		const dfa: DFAState = {transitions: [], accepting: [...states].some(state => state.accepting)};
+		dfaStates.set(key, dfa);
+
+		// Partition masks
+
+		const transitions: {mask: SparseBits, states: Set<NFAState>}[] = [];
+
+		for (const state of states) {
+			if (state.transition) {
+				const remaining = state.transition.mask.copy();
+
+				// Check against existing partitions for overlaps
+				for (const existing of transitions) {
+					const overlap = existing.mask.intersect(state.transition.mask);
+
+					if (!overlap.empty()) {
+						if (overlap.contains(existing.mask)) {
+							existing.states.add(state.transition.state);
+
+						} else {
+							//split existing
+							existing.mask.selfXor(overlap);
+							transitions.push({mask: overlap, states: new Set([...existing.states, state.transition.state])});
+						}
+						remaining.selfXor(overlap);
+					}
+				}
+				// Add new transition if any remains
+				if (!remaining.empty())
+					transitions.push({mask: remaining, states: new Set([state.transition.state])});
+			}
+		}
+
+		// Create DFA transitions from partitioned masks
+
+		for (const next of transitions)
+			dfa.transitions.push({mask: next.mask, state: createDFAState(next.states)});
+		return dfa;
+	}
+
+	collectStates(nfaStart);
+
+	// Start with epsilon closure of initial state
+	return createDFAState(new Set([nfaStart]));
+}
+
+export function runDFA2(dfa: DFAState, str: string, pos = 0): number {
+	let state: DFAState = dfa;
+	let lastAcceptPos	= state.accepting ? 0 : -1;
+
+	while (pos < str.length) {
+		const code = str.codePointAt(pos)!;
+		let stop = true;
+		for (const t of state.transitions) {
+			if (t.mask.test(code)) {
+				state	= t.state;
+				stop	= false;
+				break;
+			}
+		}
+		if (stop)
+			break;
+
+		pos += code >= 0xffff ? 2 : 1;
+
+		 // Update last accepting position after successful transition
+		if (state.accepting)
+			lastAcceptPos = pos;
+	}
+	return lastAcceptPos;
+}

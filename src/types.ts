@@ -27,6 +27,14 @@ export class characterClass extends bits.SparseBits2 {
 	}
 
 	toString(): string {
+		let s = '';
+		for (const range of this.ranges()) {
+			const [c1, c2] = range;
+			s += String.fromCodePoint(c1).replace(/[-\\\]]/g, '\\$&');
+			if (c1 !== c2 - 1)
+				s += '-' + String.fromCodePoint(c2 - 1).replace(/[-\\\]]/g, '\\$&');
+		}
+		/*
 		let s = this.undef ? '^' : '';
 		for (const i in this.bits) {
 			const b = this.bits[i] ^ this.undef;
@@ -44,6 +52,7 @@ export class characterClass extends bits.SparseBits2 {
 				}
 			}
 		}
+			*/
 		return s;
 	}
 };

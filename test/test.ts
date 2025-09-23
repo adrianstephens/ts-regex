@@ -62,14 +62,25 @@ const multilineText = `line1
 line2
 line3`;
 
+/*
+const ab = ['a', 'aa', 'aaa', 'b', 'ab', 'aab', 'aaaab'];
 
-const testRegex = regex.DFA.fromString('a+', {u: true, x: true});
-for (const str of ['a', 'aa', 'aaa', 'b', 'ab', 'aab', 'aaaab']) {
-	const end = testRegex.run(str);
-	if (end !== -1) {
-		console.log(`Matched: ${str} -> ${str.slice(0, end)}`);
-	}
+const greedyRegex = regex.NFA.fromString('a+a', {u: true, x: true});
+for (const str of ab) {
+	const caps = greedyRegex.run(str);
+	if (caps)
+		console.log(`Matched: ${str} -> ${str.slice(0, caps[0][1])}`);
 }
+const lazyRegex = regex.NFA.fromString('a+?a', {u: true, x: true});
+for (const str of ab) {
+	const caps = lazyRegex.run(str);
+	if (caps)
+		console.log(`Matched: ${str} -> ${str.slice(0, caps[0][1])}`);
+}
+*/
+
+const emailRegex0 = regex.parse(emailPattern);
+console.log(regex.toRegExpString(emailRegex0));
 
 
 const emailRegex = regex.NFA.fromString(emailPattern, {i: true});
