@@ -3,7 +3,10 @@
 [![GitHub stars](https://img.shields.io/github/stars/adrianstephens/ts-regex.svg?style=social)](https://github.com/adrianstephens/ts-regex)
 [![License](https://img.shields.io/npm/l/@isopodlabs/regex.svg)](LICENSE.txt)
 
-A comprehensive JavaScript/TypeScript regular expression parser that converts regex patterns into structured Abstract Syntax Trees (AST). Can also programmatically build regex patterns from AST nodes.
+A comprehensive JavaScript/TypeScript regular expression parser that converts regex patterns into structured Abstract Syntax Trees (AST), and can also programmatically build regex patterns from AST nodes.
+
+## ☕ Support My Work  
+If you use this package, consider [buying me a cup of tea](https://coff.ee/adrianstephens) to support future updates!  
 
 ## Features
 
@@ -263,10 +266,3 @@ const complexPattern = [
 // Convert to actual RegExp
 const regex = new RegExp(toRegExpString(phonePattern));
 ```
-
-## Performance Notes
-
-- Uses regex to find special characters for efficient parsing
-- Bitset character classes for O(1) membership testing
-- Minimal object allocation for simple patterns
-- Proper Unicode handling without unnecessary conversions
