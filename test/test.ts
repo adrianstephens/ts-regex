@@ -21,6 +21,7 @@ export function test(name: string, fn: () => void) {
 
 // Email validation with backreferences and lookarounds
 const emailPattern = `^(?=.{1,64}@.{1,255}$)([a-zA-Z0-9._-]+)@([a-zA-Z0-9.-]+)\\.([a-zA-Z]{2,})(?<!\\.)$`;
+const emailPatternX = `^(?=.{1,4}@.{1,4}$)([a-zA-Z0-9._-]+)@([a-zA-Z0-9.-]+)\\.([a-zA-Z]{2,})(?<!\\.)$`;
 
 // Test cases:
 const validEmails = ['user@example.com', 'test.email@domain.org', 'user123@sub.domain.co.uk'];
@@ -79,13 +80,12 @@ for (const str of ab) {
 }
 */
 
-const emailRegex0 = regex.parse(emailPattern);
-console.log(regex.toRegExpString(emailRegex0));
-
-
+const aaTest = regex.NFA.fromString('aa', {i: true});
+const emailTest = regex.NFA.fromString('.{1,4}@.{1,4}', {i: true});
 const emailRegex = regex.NFA.fromString(emailPattern, {i: true});
 for (const email of validEmails) {
-	if (!emailRegex.run(email)) {
+	const m = emailRegex.run(email);
+	if (!m) {
 		console.log(`Failed to match valid email: ${email}`);
 	}
 }

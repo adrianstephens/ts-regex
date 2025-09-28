@@ -1,4 +1,5 @@
 import {
+	escapeText,
 	alternation,
 	noncapture,
 	capture,
@@ -484,9 +485,10 @@ function list(parts: part[], join: string): string {
 	}).join(join);
 }
 
+
 export function toRegExpString(part: part): string {
 	if (typeof part === 'string')
-		return part.replace(/[\\^$*+?.()|[\]{}]/g, '\\$&');
+		return escapeText(part);
 
 	if (Array.isArray(part))
 		return list(part, '');

@@ -10,6 +10,25 @@ export interface options {
 	g?: boolean;	// global
 };
 
+const namedControls: Record<number, string> = {
+	0:	'0',
+	8:	'b',
+	9:	't',
+	10:	'n',
+	11:	'v',
+	12:	'f',
+	13:	'r',
+};
+
+export function escapeText(s: string): string {
+	// eslint-disable-next-line no-control-regex
+	s = s.replace(/[\x00-\x1f]/g, c => {
+		const i = c.charCodeAt(0);
+		return '\\' + (namedControls[i] ?? 'c' + String.fromCharCode(i + 64));
+	});
+	return s.replace(/[\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
 export class characterClass extends bits.SparseBits2 {
 	type = 'class' as const;
 
@@ -27,12 +46,13 @@ export class characterClass extends bits.SparseBits2 {
 	}
 
 	toString(): string {
-		let s = '';
-		for (const range of this.ranges()) {
+		const neg = this.isNegated();
+		let s = neg ? '^' : '';
+		for (const range of this.ranges(!neg)) {
 			const [c1, c2] = range;
-			s += String.fromCodePoint(c1).replace(/[-\\\]]/g, '\\$&');
+			s += escapeText(String.fromCodePoint(c1));//.replace(/[-\\\]]/g, '\\$&');
 			if (c1 !== c2 - 1)
-				s += '-' + String.fromCodePoint(c2 - 1).replace(/[-\\\]]/g, '\\$&');
+				s += '-' + escapeText(String.fromCodePoint(c2 - 1));//.replace(/[-\\\]]/g, '\\$&');
 		}
 		/*
 		let s = this.undef ? '^' : '';

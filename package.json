@@ -1,6 +1,6 @@
 {
 	"name": "@isopodlabs/regex",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"description": "Regex utilities.",
 	"repository": {
 		"type": "git",
@@ -13,8 +13,7 @@
 	],
 	"scripts": {
 		"build": "tsc",
-	    "generate": "ts-node scripts/generate.ts"
-
+		"generate": "ts-node scripts/generate.ts"
 	},
 	"keywords": [
 		"typescript",
