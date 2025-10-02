@@ -1,6 +1,7 @@
 import * as regex from '../src/index';
 import { getName, getCode } from "../src/unicode-data-helpers";
 import { prefixes } from "../src/unicode-data";
+import { getInfo, withProp } from "../src/unicode";
 
 export interface Equal<T> {
 	equal(other: T): boolean;
@@ -43,6 +44,8 @@ function testRegex(name: string, pattern: string, valid: string[], invalid: stri
 	});
 }
 
+const info = getInfo(8364);
+console.log(info.Name);
 
 testRegex('Email validation with backreferences and lookarounds', `^(?=.{1,64}@.{1,255}$)([a-zA-Z0-9._-]+)@([a-zA-Z0-9.-]+)\\.([a-zA-Z]{2,})(?<!\\.)$`, [
 	'user@example.com',
@@ -89,12 +92,12 @@ const nameTests: [number, string][] = [
 	[65,    'LATIN CAPITAL LETTER A'],
 	[97,    'LATIN SMALL LETTER A'],
 	[48,    'DIGIT ZERO'],
-	
+
 	// Extended Latin
 	[192,   'LATIN CAPITAL LETTER A WITH GRAVE'],
 	[231,   'LATIN SMALL LETTER C WITH CEDILLA'],
 	[241,   'LATIN SMALL LETTER N WITH TILDE'],
-	
+
 	// Greek Script  
 	[913,   'GREEK CAPITAL LETTER ALPHA'],
 	[945,   'GREEK SMALL LETTER ALPHA'],
@@ -139,7 +142,18 @@ test('Unicode Code->Name Lookup Tests', () => {
 		expect(getName(codePoint, prefixes), `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')} '${String.fromCodePoint(codePoint)}'`).toEqual(expectedName);
 });
 
+console.log(info.Name);
+
 test('Unicode Name->Code Lookup Tests', () => {
 	for (const [codePoint, name] of nameTests)
 		expect(getCode(name, prefixes), `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')} '${String.fromCodePoint(codePoint)}'`).toEqual(codePoint);
 });
+
+console.log(info.Name);
+for (const [key, value] of Object.entries(info)) {
+	console.log(`${key}: ${value}`);
+}
+
+for (const i of withProp('ASCII_Hex_Digit')!) {
+	console.log(i, getInfo(i).Name);
+}

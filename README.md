@@ -273,3 +273,147 @@ const complexPattern = [
 // Convert to actual RegExp
 const regex = toRegExp(phonePattern));
 ```
+
+## Unicode API
+The package includes a standalone Unicode API for querying character properties, and querying properties for matching characters.
+
+### `getInfo(codePoint: number)`
+
+Returns a proxy object containing all Unicode properties for the specified code point. The returned object dynamically provides access to:
+
+- `Name` - The Unicode name of the character
+- Any binary property (e.g., `Alphabetic`, `Uppercase`, `White_Space`) - returns `true` if the character has that property
+- Any enumerated property (e.g., `General_Category`, `Script`, `Bidi_Class`) - returns the specific value for that character
+
+```typescript
+import { getInfo } from '@isopodlabs/regex/unicode';
+
+const info = getInfo(0x1F600); // Get info for 😀
+console.log(info.Name);              // "GRINNING FACE"
+console.log(info.General_Category);  // "So" (Symbol, other)
+console.log(info.Script);            // "Common"
+console.log(info.Alphabetic);        // false
+
+const letterInfo = getInfo(65); // 'A'
+console.log(letterInfo.Name);         // "LATIN CAPITAL LETTER A"
+console.log(letterInfo.Uppercase);    // true
+console.log(letterInfo.Script);       // "Latin"
+```
+
+### `withProp(property: string, value?: string)`
+
+Returns a `SparseBits` object containing all code points that match the specified Unicode property.
+
+- For binary properties (no `value` parameter): returns all code points that have that property
+- For enumerated properties (with `value` parameter): returns all code points with that specific property value
+
+```typescript
+import { getInfo, withProp } from '@isopodlabs/regex/unicode';
+
+// Get all ASCII hex digit characters (0-9, A-F, a-f)
+for (const codePoint of withProp('ASCII_Hex_Digit')!) {
+  console.log(codePoint, getInfo(codePoint).Name);
+}
+// Output: 48 "DIGIT ZERO", 49 "DIGIT ONE", ..., 65 "LATIN CAPITAL LETTER A", etc.
+
+// Get all characters with Script=Greek
+for (const codePoint of withProp('Script', 'Greek')!) {
+  console.log(String.fromCodePoint(codePoint)); // α, β, γ, etc.
+}
+
+// Get all uppercase letters
+const uppercaseChars = withProp('Uppercase');
+console.log(uppercaseChars.test(65)); // true (A)
+console.log(uppercaseChars.test(97)); // false (a)
+```
+
+### Available Properties
+
+The Unicode API supports all standard Unicode properties including:
+
+**Binary Properties:** `Alphabetic`, `Uppercase`, `Lowercase`, `White_Space`, `ASCII_Hex_Digit`, `Bidi_Control`, `Dash`, `Hex_Digit`, `Hyphen`, `Ideographic`, `Join_Control`, `Logical_Order_Exception`, `Noncharacter_Code_Point`, `Other_Alphabetic`, `Other_Default_Ignorable_Code_Point`, `Other_Grapheme_Extend`, `Other_ID_Continue`, `Other_ID_Start`, `Other_Lowercase`, `Other_Math`, `Other_Uppercase`, `Pattern_Syntax`, `Pattern_White_Space`, `Quotation_Mark`, `Radical`, `Regional_Indicator`, `Sentence_Terminal`, `Soft_Dotted`, `Terminal_Punctuation`, `Unified_Ideograph`, `Variation_Selector`, `XID_Continue`, `XID_Start`
+
+**Enumerated Properties:** `General_Category`, `Script`, `Script_Extensions`, `Bidi_Class`, `Canonical_Combining_Class`, `Numeric_Type`
+
+**Scripts:** `Latin`, `Greek`, `Cyrillic`, `Arabic`, `Hebrew`, `Chinese` (Han), `Japanese` (Hiragana/Katakana), and many others
+
+### Combining Properties with Set Operations
+
+The `SparseBits` objects returned by `withProp()` support set operations, allowing you to combine multiple Unicode properties to create complex character sets:
+
+```typescript
+import { withProp } from '@isopodlabs/regex/unicode';
+
+// Get all uppercase letters
+const uppercase = withProp('Uppercase');
+// Get all Latin script characters
+const latin = withProp('Script', 'Latin');
+
+// Combine properties using set operations
+const uppercaseLatin = uppercase.intersect(latin);  // Uppercase AND Latin
+const letterOrDigit = withProp('Letter').union(withProp('Number'));  // Letters OR Numbers
+const nonWhitespace = withProp('White_Space').complement();  // NOT whitespace
+
+// Test if specific characters match combined criteria
+console.log(uppercaseLatin.test(65));   // true ('A' is uppercase Latin)
+console.log(uppercaseLatin.test(97));   // false ('a' is not uppercase)
+console.log(uppercaseLatin.test(0x0391)); // false (Greek 'Α' is uppercase but not Latin)
+
+// Get count of matching characters
+console.log(uppercaseLatin.countSet()); // Number of uppercase Latin characters
+
+// Iterate through all matching characters
+for (const codePoint of uppercaseLatin) {
+  console.log(String.fromCodePoint(codePoint)); // A, B, C, ...
+}
+```
+
+#### Available Set Operations
+
+**Non-mutating operations** (return new SparseBits):
+- `intersect(other)` - Characters in both sets (AND)
+- `union(other)` - Characters in either set (OR)  
+- `difference(other)` - Characters in this set but not other (AND NOT)
+- `xor(other)` - Characters in either set but not both (XOR)
+- `complement()` - All characters not in this set (NOT)
+
+**Mutating operations** (modify the current set):
+- `selfIntersect(other)` - AND operation in-place
+- `selfUnion(other)` - OR operation in-place
+- `selfDifference(other)` - AND NOT operation in-place  
+- `selfXor(other)` - XOR operation in-place
+- `selfComplement()` - NOT operation in-place
+
+**Query operations:**
+- `test(codePoint)` - Check if character is in the set
+- `contains(other)` - Check if this set contains all of other
+- `intersects(other)` - Check if sets have any characters in common
+- `countSet()` - Number of characters in the set
+- `empty()` - Check if set is empty
+
+#### Complex Property Combinations
+
+```typescript
+// Mathematical symbols that are not in Common script
+const mathNotCommon = withProp('Math')
+  .difference(withProp('Script', 'Common'));
+
+// Letters that can change case (have both upper and lower variants)
+const caseChanging = withProp('Uppercase')
+  .union(withProp('Lowercase'));
+
+// Whitespace characters excluding line breaks
+const spaceNotLineBreak = withProp('White_Space')
+  .difference(withProp('Line_Break', 'LF'))
+  .difference(withProp('Line_Break', 'CR'));
+
+// Asian scripts (CJK + related)
+const asianScripts = withProp('Script', 'Han')
+  .union(withProp('Script', 'Hiragana'))
+  .union(withProp('Script', 'Katakana'))
+  .union(withProp('Script', 'Hangul'));
+
+// Create efficient combined tests
+const isAsianLetter = withProp('Letter').intersect(asianScripts);
+console.log(isAsianLetter.test(0x4E00)); // true (CJK ideograph)
+```

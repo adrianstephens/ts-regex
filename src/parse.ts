@@ -1,3 +1,4 @@
+import { bits } from "@isopodlabs/utilities";
 import {
 	escapeText,
 	alternation,
@@ -90,13 +91,13 @@ x{n,m}?
 // Regex parsing
 //-----------------------------------------------------------------------------
 interface sequencenode {
-	set: Record<number, number>;
+	set: bits.SparseBits;
 	children?: sequencenode[];
 };
 
 function getUnicodeSequence(tree: sequencenode[]): part {
 	return alternation(...tree.map(node => {
-		const cc = characterClass.fromEntries(node.set);
+		const cc = characterClass.fromEntries(node.set.entries());
 		if (node.children) {
 			const child = getUnicodeSequence(node.children);
 			return concatenation(cc, child);
@@ -123,7 +124,7 @@ function getUnicodeSet(property: string, neg: boolean) {
 				return getUnicodeSequence(tree);
 		}
 	}
-	return !set ? undefined : neg ? characterClass.fromEntries(set).complement() : characterClass.fromEntries(set);
+	return !set ? undefined : neg ? characterClass.fromEntries(set.entries()).complement() : characterClass.fromEntries(set.entries());
 }
 
 interface PendingGroup {

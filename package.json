@@ -1,12 +1,16 @@
 {
 	"name": "@isopodlabs/regex",
-	"version": "0.3.0",
+	"version": "1.0.0",
 	"description": "Regex utilities.",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/adrianstephens/ts-regex.git"
 	},
-	"main": "dist/parse.js",
+	"main": "dist/index.js",
+	"exports": {
+		".": "./dist/index.js",
+		"./unicode": "./dist/unicode.js"
+	},
 	"files": [
 		"dist/**/*.{js,d.ts}",
 		"README.md"

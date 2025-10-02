@@ -200,7 +200,7 @@ function downloadString(url: string): Promise<string> {
 }
 
 function makeBitset(data: number[]) {
-	const r = new bits.SparseBits2();
+	const r = new bits.SparseBits();
 	for (const i of data)
 		r.set(i);
 	return r;
@@ -213,11 +213,11 @@ async function rawTable(url: string) {
 
 async function getTable(url: string) {
 	const data = await rawTable(url);
-	const table: Record<string, bits.SparseBits2> = {};
+	const table: Record<string, bits.SparseBits> = {};
 	const re	= /^(\w+)(?:..(\w+))?/;
 
 	data.forEach(([code, value]) => {
-		const entry = (table[value] ??= new bits.SparseBits2());
+		const entry = (table[value] ??= new bits.SparseBits());
 		const m = re.exec(code);
 		if (m) {
 			const start = parseInt(m[1], 16);
@@ -234,7 +234,7 @@ async function getTable(url: string) {
 	/*
 	const data	= await downloadString(url);
 	const re	= /^(\w+)(?:..(\w+))?\s*;\s*(\w+)/;
-	const table: Record<string, bits.SparseBits2> = {};
+	const table: Record<string, bits.SparseBits> = {};
 
 	data.split('\n').forEach(line => {
 		if (!line || line.startsWith('#'))
@@ -242,7 +242,7 @@ async function getTable(url: string) {
 
 		const m = re.exec(line);
 		if (m) {
-			const entry = (table[m[3]] ??= new bits.SparseBits2());
+			const entry = (table[m[3]] ??= new bits.SparseBits());
 			const start = parseInt(m[1], 16);
 			if (m[2]) {
 				const end = parseInt(m[2], 16);
@@ -259,11 +259,11 @@ async function getTable(url: string) {
 
 async function getTableMulti(url: string) {
 	const data = await rawTable(url);
-	const table: Record<string, bits.SparseBits2> = {};
+	const table: Record<string, bits.SparseBits> = {};
 	const re	= /^(\w+)(?:..(\w+))?/;
 
 	data.forEach(([code, value]) => {
-		const entries = value.split(' ').map(v => (table[v] ??= new bits.SparseBits2()));
+		const entries = value.split(' ').map(v => (table[v] ??= new bits.SparseBits()));
 		const m = re.exec(code);
 		if (m) {
 			const start = parseInt(m[1], 16);
@@ -340,7 +340,7 @@ class TreeNode extends Map<number, TreeNode> {
 }
 
 interface BitsetNode<T> {
-	bits: bits.SparseBits2;
+	bits: bits.SparseBits;
 	value: T;
 }
 
@@ -391,10 +391,10 @@ async function getEmojiTable(url: string) {
 
 interface DerivedSet {
 	bases: Set<string>;
-	extra: bits.SparseBits2;
+	extra: bits.SparseBits;
 }
 
-function findOptimalSubsets(sets: Record<string, bits.SparseBits2>) {
+function findOptimalSubsets(sets: Record<string, bits.SparseBits>) {
 	const names = Object.keys(sets);
 	
 	// Pre-compute all subset relationships O(n²) once
@@ -423,39 +423,46 @@ function findOptimalSubsets(sets: Record<string, bits.SparseBits2>) {
 			}
 		});
 
-		if (maxCoverage === 0)			// No more subsets, pick largest remaining set
+		if (maxCoverage === 0)			// No more subsets
 			break;
 
-
-		for (const containedBy of remaining.get(bestSet)!) {
+		for (const containedBy of remaining.get(bestSet)!)
 			(basesPerSet[containedBy] ??= new Set()).add(bestSet);
-		}
-/*
-		const baseSet = sets[bestSet];
-		for (const name of remaining.keys()) {
-			//const derived = expressions[name] ??= { bases: new Set<string>(), extra: new bits.SparseBits2() };
-			if (name !== bestSet && sets[name].contains(baseSet))
-				(basesPerSet[name] ??= new Set()).add(bestSet);
-		}
-*/
+
 		remaining.delete(bestSet);
 
 		// Update subset cache when removing sets
-		for (const [_, containedBy] of remaining) {
+		for (const [_, containedBy] of remaining)
 			containedBy.delete(bestSet);
-		}
 	}
 
 	return Object.fromEntries(names.map(name => {
 		const set	= sets[name];
-		const extra = bits.SparseBits2.fromEntries(set.entries());
+		const extra = bits.SparseBits.fromEntries(set.entries());
 		const bases = basesPerSet[name];
 		if (bases) {
+			//strip bases of bases
 			for (const i of bases) {
 				if (basesPerSet[i])
 					basesPerSet[i].forEach(base => bases.delete(base));
-				extra.selfIntersect(sets[i].complement());
 			}
+
+			//see what's left after removing bases
+			const entries = new Set(Array.from(bases).reduce((remaining, i) => remaining.selfDifference(sets[i]), extra.copy()).clean().entries().map(([k]) => k));
+			for (const i of bases) {
+				if (!sets[i].entries().some(([k, _]) => !entries.has(k)))
+					bases.delete(i);	// base is redundant
+			}
+
+			for (const i of bases)
+				extra.selfDifference(sets[i]);
+
+			const entries2 = new Set(extra.clean().entries().map(([k]) => k));
+			if (entries2.size !== entries.size) {
+				console.log(`Error computing bases for ${name}`);
+			}
+
+
 		}
 		extra.clean();
 		return [name, { bases, extra }];
@@ -466,7 +473,7 @@ function findOptimalSubsets(sets: Record<string, bits.SparseBits2>) {
 // Names
 //-----------------------------------------------------------------------------
 
-type trieNode = bits.SparseBits2 & {children?: bitTrie};
+type trieNode = bits.SparseBits & {children?: bitTrie};
 type bitTrie = Record<string, trieNode>;
 
 function trimTrie(trie: bitTrie) {
@@ -482,7 +489,7 @@ function trimTrie(trie: bitTrie) {
 	}
 }
 
-function makeBitTrie(bits: bits.SparseBits2, split: (key: string, set: bits.SparseBits2) => bitTrie) {
+function makeBitTrie(bits: bits.SparseBits, split: (key: string, set: bits.SparseBits) => bitTrie) {
 	function recurse(sets: bitTrie) {
 		for (const [key, value] of Object.entries(sets)) {
 			const children = split(key, value);
@@ -493,12 +500,13 @@ function makeBitTrie(bits: bits.SparseBits2, split: (key: string, set: bits.Spar
 		}
 	}
 
+
 	const trie: bitTrie = {'': bits};
 	recurse(trie);
 	return trie;
 }
 
-function addTrieNode(tree: bitTrie, name: string, set: bits.SparseBits2): trieNode | undefined {
+function addTrieNode(tree: bitTrie, name: string, set: bits.SparseBits): trieNode | undefined {
 	let node: trieNode | undefined = tree[''];
 	for (;;) {
 		node.selfUnion(set);
@@ -517,30 +525,85 @@ function addTrieNode(tree: bitTrie, name: string, set: bits.SparseBits2): trieNo
 	}
 }
 
+function trieToString(names: string[], node: trieNode): string {
+/*
+	const nameLists: string[][] = [];
+	function gather(node: trieNode, len: number) {
+		const children = node.children;
+		const used = bits.SparseBits.fromEntries(node.entries());
 
-function trieToString(names: string[], node: trieNode, len = 0, depth = 0): string {
-	const children = node.children;
-	const used = bits.SparseBits2.fromEntries(node.entries());
+		if (children) {
+			Object.keys(children).map(i => gather(children[i], i.endsWith('-') ? i.length : i.length + 1));
+			for (const c of Object.values(children))
+				used.selfIntersect(c.complement());
+		}
 
-	let result = `set: ${bitsetToString2(node)}`;
+		if (used.next(-1) >= 0) {
+			const chars =	 Array.from(used.where(true), i => (names[i] ?? '').slice(len));
+			if (chars.some(Boolean) || chars.length === 1) {
+				const hex = Array.from(used.where(true), i => i.toString(16).toUpperCase().padStart(4, '0'));
+				if (chars.some((i, n) => i !== hex[n]))
+					nameLists.push(chars);
+			}
+		}
+	}
+*/
+	function recurse(node: trieNode, len: number, depth: number) {
+		const children = node.children;
+		const used = node.copy();//bits.SparseBits.fromEntries(node.entries());
 
-	if (children) {
-		result += ", children: {\n" + Object.keys(children).map(i =>
-			`${indent(depth + 1)}"${len === 0 || i[len-1] === ' ' ? i.slice(len) : i.slice(len - 1)}": {${trieToString(names, children[i], i.endsWith('-') ? i.length : i.length + 1, depth + 1)}}`
-		).join(',\n') + `\n${indent(depth)}}`;
+		let result = `set: ${bitsetToString2(node)}`;
 
-		for (const c of Object.values(children))
-			used.selfIntersect(c.complement());
+		if (children) {
+			result += ", children: {\n" + Object.keys(children).map(i =>
+				`${indent(depth + 1)}"${len === 0 || i[len-1] === ' ' ? i.slice(len) : i.slice(len - 1)}": {${recurse(children[i], i.endsWith('-') ? i.length : i.length + 1, depth + 1)}}`
+			).join(',\n') + `\n${indent(depth)}}`;
+
+			for (const c of Object.values(children))
+				used.selfDifference(c);
+		}
+
+		if (used.next(-1) >= 0) {
+			const chars =	 Array.from(used, i => (names[i] ?? '').slice(len));
+			if (chars.some(Boolean) || chars.length === 1) {
+				const hex = Array.from(used, i => i.toString(16).toUpperCase().padStart(4, '0'));
+				if (chars.some((i, n) => i !== hex[n]))
+					result += ", chars: [" + chars.map(i => `"${i}"`).join(',') + ']';
+			}
+		}
+
+		return result;
+	}
+/*
+	gather(node, 0);
+	nameLists.sort((a, b) => {
+		const len = Math.min(a.length, b.length);
+		for (let i = 0; i < len; i++) {
+			if (a[i] !== b[i])
+				return a[i] < b[i] ? -1 : 1;
+		}
+		// If one is a prefix of the other, sort by length
+		return a.length - b.length;
+	});
+
+	const minified = nameLists.filter((v, i) => v.some((n, j) => n !== nameLists[i + 1]?.[j]));
+
+	function stringArraySize(list: string[]) {
+		return list.reduce((a, b) => a + b.length, 0) + 2 * list.length;
 	}
 
-	if (used.next(-1) >= 0) {
-		const chars =	 Array.from(used.where(true), i => (names[i] ?? '').slice(len));
-		if (chars.some(Boolean) || chars.length === 1)
-			result += ", chars: [" + chars.map(i => `"${i}"`).join(',') + ']';
-	}
-
-	return result;
+	const size0 = nameLists.reduce((a, b) => a + stringArraySize(b), 0);
+	const size1 = minified.reduce((a, b) => a + stringArraySize(b), 0);
+	console.log(`Reduced name list size from ${size0} to ${size1} (${((size0 - size1) / size0 * 100).toFixed(1)}%)`);
+*/
+	return recurse(node, 0, 0);
 }
+/*
+function remainingSet(node: trieNode): bits.SparseBits {
+	return Object.values(node.children ?? [])
+		.reduce((acc, p) => acc.selfDifference(p), node.copy()).clean();
+}
+*/
 
 //-----------------------------------------------------------------------------
 // Output
@@ -552,8 +615,8 @@ function symbol(name: string) {
 	return JSON.stringify(name);
 }
 
-function bitsetToString(set: bits.SparseBits2) {
-	return '{' + set.entries().map(([i, v]) => `${i}:0x${(v + 0x200000000).toString(16).slice(-8)}`).join(',') + '}';
+function bitsetToString(set: bits.SparseBits) {
+	return 'sparse({' + set.entries().map(([i, v]) => `${i}:0x${(v + 0x200000000).toString(16).slice(-8)}`).join(',') + '})';
 }
 function rangesToString(ranges: number[][]) {
 	return 'ranges(' + ranges.map(([start, end]) =>`[${start},${end}]`).join(',') + ')';
@@ -573,7 +636,7 @@ function derivedToString(name: string, set: DerivedSet) {
 	return symbol(name) + ': ' + bitsetString;
 }
 
-function bitsetToString2(set: bits.SparseBits2) {
+function bitsetToString2(set: bits.SparseBits) {
 	const ranges = [...set.ranges()];//.map(([start, end]) => ({ start, end }));
 	return ranges.length < set.keys().length
 		? rangesToString(ranges)
@@ -590,7 +653,7 @@ function aliasesToString(aliases: Record<string, string>, objName: string) {
 	}\n});\n\n`;
 }
 
-function totalSize(sets: bits.SparseBits2[]) {
+function totalSize(sets: bits.SparseBits[]) {
 	return sets.reduce((a, b) => a + b.keys().length, 0);
 }
 
@@ -606,7 +669,7 @@ function totalSize(sets: bits.SparseBits2[]) {
 //	CJKRadicals.txt
 //	CaseFolding.txt
 //	CompositionExclusions.txt
-//	DerivedAge.txt
+//x	DerivedAge.txt
 //x	DerivedCoreProperties.txt
 //x	DerivedNormalizationProps.txt
 //x	EastAsianWidth.txt
@@ -649,17 +712,17 @@ async function run(exportNames: boolean, exportSequences: boolean) {
 		unicode[index] = char;
 	});
 
-	function valuesBy(key: keyof UnicodeChar): Record<string, bits.SparseBits2> {
+	function valuesBy(key: keyof UnicodeChar): Record<string, bits.SparseBits> {
 		return unicode.reduce((acc, item, index) => {
 			const value = item[key];
 			if (value) {
-				(acc[value] ??= new bits.SparseBits2()).set(index);
+				(acc[value] ??= new bits.SparseBits()).set(index);
 			}
 			return acc;
-		}, {} as Record<string, bits.SparseBits2>);
+		}, {} as Record<string, bits.SparseBits>);
 	}
 
-	function binaryBy(key: keyof UnicodeChar): bits.SparseBits2 {
+	function binaryBy(key: keyof UnicodeChar): bits.SparseBits {
 		return makeBitset(unicode.map((char, i) => char[key] === 'Y' ? i : -1).filter(i => i >= 0));
 	}
 
@@ -682,16 +745,16 @@ async function run(exportNames: boolean, exportSequences: boolean) {
 		Numeric_Type: 		unicode.reduce((acc, item, index) => {
 			const value = !item.Numeric_Type_Numeric ? undefined : !item.Numeric_Type_Digit ? 'Numeric' : !item.Numeric_Type_Decimal ? 'Digit' : 'Decimal';
 			if (value)
-				(acc[value] ??= new bits.SparseBits2()).set(index);
+				(acc[value] ??= new bits.SparseBits()).set(index);
 			return acc;
-		}, {} as Record<string, bits.SparseBits2>),
+		}, {} as Record<string, bits.SparseBits>),
 
 		Numeric_Value: 		unicode.reduce((acc, item, index) => {
 			const value = item.Numeric_Type_Decimal || item.Numeric_Type_Digit || item.Numeric_Type_Numeric;
 			if (value)
-				(acc[value] ??= new bits.SparseBits2()).set(index);
+				(acc[value] ??= new bits.SparseBits()).set(index);
 			return acc;
-		}, {} as Record<string, bits.SparseBits2>),
+		}, {} as Record<string, bits.SparseBits>),
 
 
 		Script_Extensions:	await getTableMulti('https://unicode.org/Public/14.0.0/ucd/ScriptExtensions.txt'),
@@ -702,9 +765,9 @@ async function run(exportNames: boolean, exportSequences: boolean) {
 	};	
 	
 	const binaryProps = {...Object.fromEntries(Object.entries(props).filter(i => supported.has(i[0]))),
-		ASCII:			new bits.SparseBits2().setRange(0, 128),
-		Any:			new bits.SparseBits2().setRange(0, 0x110000),
-		Assigned:		makeBitset(unicode.map((_, i) => i).filter(i => unicode[i])),//lazyUnion('Any'),
+		ASCII:			new bits.SparseBits().setRange(0, 128),
+		Any:			new bits.SparseBits().setRange(0, 0x110000),
+		Assigned:		makeBitset(unicode.map((_, i) => i).filter(i => unicode[i])),
 		Bidi_Mirrored:	binaryBy('Bidi_Mirrored'),
 	};
 	
@@ -712,7 +775,7 @@ async function run(exportNames: boolean, exportSequences: boolean) {
 	const gc = sharedProps.General_Category;
 	for (const [k, v] of Object.entries(gc)) {
 		if (k.length === 2)
-			(gc[k[0]] ??= new bits.SparseBits2()).selfUnion(v);
+			(gc[k[0]] ??= new bits.SparseBits()).selfUnion(v);
 	}
 
 	const allSets = {
@@ -727,25 +790,24 @@ async function run(exportNames: boolean, exportSequences: boolean) {
 			(allSets as any)[k] = i[k];
 		}
 	}
-/*
-	const allSets = {
-		...binaryProps,
-		...Object.assign({}, ...Object.values(enumProps)),
-	};
-*/
+
 	console.log(`Total bitsets size: ${totalSize(Object.values(allSets))} entries`);
 	const optSets = findOptimalSubsets(allSets);
 	console.log(`Total bitsets size: ${totalSize(Object.values(optSets).map(set => set.extra))} entries`);
 
-	const sortedProps = Object.fromEntries(Object.entries(optSets).sort((a, b) => a[0] < b[0] ? -1 : a[0] === b[0] ? 0 : 1));
+	const sortedProps = Object.fromEntries(Object.entries(optSets).sort((a, b) => 
+		(a[0] in binaryProps) !== (b[0] in binaryProps)
+			? (a[0] in binaryProps ? -1 : 1)
+	 		: (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)
+	));
 
-	const imports = ['bitset', 'ranges', 'derived', 'ref', 'aliases'];
+	const imports = ['BitSet', 'sparse', 'ranges', 'derived', 'ref', 'aliases'];
 
 	if (exportNames)
-		imports.push('prefixtree', 'getNames');
+		imports.push('PrefixTree', 'getNames');
 
 	if (exportSequences)
-		imports.push('sequencenode', 'makeTrees');
+		imports.push('SequenceTree', 'makeTrees');
 
 	let result =
 `// This file is generated by scripts/generate.ts
@@ -753,13 +815,13 @@ import {${imports.join(', ')}} from './unicode-data-helpers';
 
 `
 // output property bitsets
-	+	'export const props: Record<string, bitset> = {\n'
+	+	'export const props: Record<string, BitSet> = {\n'
 	+	Object.entries(sortedProps).map(([k, v]) => `\t${derivedToString(k, v)}`).join(',\n')
 	+	'\n};\n\n'
 	+	aliasesToString(propAliases, 'props')
 
 // output enum properties
-	+	'export const enumProps: Record<string, Record<string, bitset>> = {\n'
+	+	'export const enumProps: Record<string, Record<string, BitSet>> = {\n'
 	+	Object.entries(sharedProps).map(([key, value]) => `\t${key}: ref(props, ${
 			Object.keys(value).map(k => `"${k}"`).join(', ')
 		})`).join(',\n')
@@ -769,13 +831,14 @@ import {${imports.join(', ')}} from './unicode-data-helpers';
 			}`).join(',\n')
 		}\n\t}`).join('')
 	+	`,\n\tget Name() { return getNames(prefixes); }`
+//	+	`,\n\tName: getNames(prefixes)`
 	+	'\n};\n\n'
 	+	aliasesToString(enumAliases, 'enumProps');
 
 // output name trie
 
 	if (exportNames) {
-		const names			= unicode.map(i => i.Name ?? '');
+		const names	= unicode.map(i => i.Name ?? '');
 		const groups: Record<string, number[]> = {};
 		for (const i in names) {
 			if (names[i].startsWith('<')) {
@@ -789,43 +852,44 @@ import {${imports.join(', ')}} from './unicode-data-helpers';
 				delete names[i];
 		}
 
-		const prefixSets = makeBitTrie(makeBitset(names.map((_, i) => i)), (key, set) => {
+		const prefixSets = makeBitTrie(makeBitset(names.map((_, i) => i).filter(i => i !== undefined)), (key, set) => {
 			const from = key.length + (key.endsWith('-') ? 0 : 1);
 			const children: bitTrie = {};
-			for (const i of set.where(true)) {
+			for (const i of set) {
 				const name = names[i];
 				if (name) {
 					let s = name.indexOf(' ', from);
 					if (s < 0)
 						s = name.indexOf('-', from) + 1;
+
+					(children[s > 0 ? name.slice(0, s) : name] ??= new bits.SparseBits()).set(i);
+/*
 					if (s > 0) {
 						const prefix = name.slice(0, s);
-						(children[prefix] ??= new bits.SparseBits2()).set(i);
+						(children[prefix] ??= new bits.SparseBits()).set(i);
 					} else {
-						(children[name] ??= new bits.SparseBits2()).set(i);
-					}
+						(children[name] ??= new bits.SparseBits()).set(i);
+					}*/
 				}
 			}
 
-			Object.entries(children).filter(([_, bits]) => Array.from(bits.where(true)).length < 2).map(([key]) => key).forEach(key => delete children[key]);
+			Object.entries(children).filter(([_, bits]) => Array.from(bits).length < 2).map(([key]) => key).forEach(key => delete children[key]);
 			return children;
 		});
+
 		trimTrie(prefixSets);
 
 		const root = prefixSets[''];
 
-		for (const group of Object.values(groups)) {
-			root.selfUnion(new bits.SparseBits2().setRange(group[0], group[1] + 1));
-		}
 		addTrieNode(prefixSets, "CJK UNIFIED IDEOGRAPH-", Object.entries(groups).reduce((acc, [key, v]) => {
 			if (key.startsWith('CJK Ideograph'))
 				acc.setRange(v[0], v[1] + 1);
 			return acc;
-		}, new bits.SparseBits2()));
-		addTrieNode(prefixSets, "HANGUL SYLLABLE-", new bits.SparseBits2().setRange(groups['Hangul Syllable'][0], groups['Hangul Syllable'][1] + 1));
-		addTrieNode(prefixSets, "TANGUT IDEOGRAPH-", new bits.SparseBits2().setRange(groups['Tangut Ideograph'][0], groups['Tangut Ideograph'][1] + 1));
+		}, new bits.SparseBits()));
+		addTrieNode(prefixSets, "HANGUL SYLLABLE-", new bits.SparseBits().setRange(groups['Hangul Syllable'][0], groups['Hangul Syllable'][1] + 1));
+		addTrieNode(prefixSets, "TANGUT IDEOGRAPH-", new bits.SparseBits().setRange(groups['Tangut Ideograph'][0], groups['Tangut Ideograph'][1] + 1));
 
-		result += `\nexport const prefixes: prefixtree = {${trieToString(names, root, 0, 0)}\n};\n`;
+		result += `\nexport const prefixes: PrefixTree = {${trieToString(names, root)}\n};\n`;
 
 	}
 
@@ -879,7 +943,7 @@ import {${imports.join(', ')}} from './unicode-data-helpers';
 			+ '\n);\n\n'
 
 		// output sequences
-			+ 'export const sequences: Record<string, sequencenode[]> = {\n'
+			+ 'export const sequences: Record<string, SequenceTree[]> = {\n'
 			+ Object.entries(optSeq).map(([key, value]) => `\t${key}: trees[${value}]`).join(',\n')
 			+ '\n};\n\n';
 	}

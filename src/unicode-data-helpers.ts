@@ -1,24 +1,17 @@
 import { bits } from "@isopodlabs/utilities";
+export type BitSet = bits.SparseBits;
 
-export type bitset = Record<number, number>;
-
-export interface sequencenode {
-	set: bitset,
-	children?: sequencenode[]
+export interface SequenceTree {
+	set:		BitSet,
+	children?:	SequenceTree[]
 };
 
-export interface prefixtree {
-	set: bitset;
-	children?: Record<string, prefixtree>;
-	chars?: string[];
-	remaining?: bits.SparseBits;	// runtime cached complement of children sets
-	indices?: Record<number, string[]>; // runtime bit chunk -> child names
-}
-	
-
-function combine(dest: bitset, srce: bitset): void {
-	for (const key in srce)
-		dest[key] = (dest[key] ?? 0) | srce[key];
+export interface PrefixTree {
+	set:		BitSet;
+	children?:	Record<string, PrefixTree>;
+	chars?:		string[];
+	remaining?:	BitSet;	// runtime cached complement of children sets
+	indices?:	Record<number, string[]>; // runtime bit chunk -> child names
 }
 
 function fix<T>(obj: any, name: string, value: T): T {
@@ -26,30 +19,7 @@ function fix<T>(obj: any, name: string, value: T): T {
 	return value;
 }
 
-export function ranges(...ranges: [number, number][]): bitset {
-	const r: bitset = {};
-	for (const [start, end] of ranges) {
-		let 	i	= start >> 5;
-		const	e	= end >> 5;
-		if (i === e) {
-			r[i] = (r[i] ?? 0) | ((1 << (end & 0x1f)) - (1 << (start & 0x1f)));
-		} else {
-			r[i] = (r[i] ?? 0) | -(1 << (start & 0x1f));
-			while (++i < e)
-				r[i] = 0xffffffff;
-			r[i] = (r[i] ?? 0) | ((1 << (end & 0x1f)) - 1);
-		}
-	}
-	return r;
-}
-
-export const derived = (props: any, name: string, dest: bitset, ...others: string[]) => {
-	for (const set of others)
-		combine(dest, props[set]);
-	return fix(props, name, dest);
-};
-
-export function ref(props: any, ...names: string[]): Record<string, bitset> {
+export function ref<T>(props: Record<string, T>, ...names: string[]): Record<string, T> {
 	return Object.defineProperties({}, Object.fromEntries(names.map(name => [name, {
 		get() { return fix(this, name, props[name]); },
 		enumerable: true,
@@ -65,16 +35,25 @@ export function aliases(obj: any, aliases: Record<string, string>) {
 	}])));
 }
 
-export function addProperty(obj: any, get: () => any, name: string) {
-	Object.defineProperty(obj, name, {
-		get,
-		enumerable: true,
-		configurable: true
-	});
+export function sparse(v: Record<number, number>): BitSet {
+	return new bits.SparseBits(v);
 }
 
-export function makeTrees(...data: [bitset, number?][][]): sequencenode[][] {
-	const trees: sequencenode[][] = data.map(entries => 
+export function ranges(...ranges: [number, number][]): BitSet {
+	const r = new bits.SparseBits();
+	for (const [start, end] of ranges)
+		r.setRange(start, end);
+	return r;
+}
+
+export const derived = (props: Record<string, BitSet>, name: string, dest: BitSet, ...others: string[]) => {
+	for (const set of others)
+		dest.selfUnion(props[set]);
+	return fix(props, name, dest);
+};
+
+export function makeTrees(...data: [BitSet, number?][][]): SequenceTree[][] {
+	const trees: SequenceTree[][] = data.map(entries => 
 		entries.map(([bits]) => ({ set: bits }))
 	);
 	
@@ -91,38 +70,41 @@ export function makeTrees(...data: [bitset, number?][][]): sequencenode[][] {
 
 // names
 
-function remainingSet(node: prefixtree): bits.SparseBits {
-	const set = node.remaining ??= Object.values(node.children ?? [])
-		.reduce((acc, p) => acc.selfDifference(bits.SparseBits.fromEntries(p.set)), bits.SparseBits.fromEntries(node.set));
-	return set;
-/*
-	const set = bits.SparseBits.fromEntries(node.set);
-	if (node.children) {
-		for (const p of Object.values(node.children))
-			set.selfDifference(bits.SparseBits.fromEntries(p.set));
-	}
-*/
+export function getNames(tree: PrefixTree) {
+	return new Proxy(tree, {
+		get(tree, prop: string) {
+			const code = getCode(prop, tree);
+			if (code !== undefined)
+				return bits.SparseBits.fromIndices(code);
+			return new bits.SparseBits();
+		}
+	}) as any as Record<string, BitSet>;
 }
 
-function getIndices(node: prefixtree) {
+function remainingSet(node: PrefixTree): bits.SparseBits {
+	return node.remaining ??= Object.values(node.children ?? [])
+		.reduce((acc, p) => acc.selfDifference(p.set), node.set.copy()).clean();
+}
+
+function getIndices(node: PrefixTree) {
 	if (node.indices)
 		return node.indices;
 
 	const indices: Record<number, string[]> = {};
 	for (const [prefix, p] of Object.entries(node.children ?? [])) {
-		for (const chunk in p.set)
+		for (const [chunk] of p.set.entries())
 			(indices[chunk] ??= []).push(prefix);
 	}
 	node.indices = indices;
 	return indices;
 }
 
-export function getName(code: number, node: prefixtree): string | undefined {
+export function getName(code: number, node: PrefixTree): string | undefined {
 	let name = '';
-	const chunk = code >> 5, bit = 1 << (code & 0x1f);
+	const chunk = code >> 5;//, bit = 1 << (code & 0x1f);
 
 	while (node.children) {
-		const prefix = getIndices(node)[chunk]?.find(p => node.children![p].set[chunk] & bit);
+		const prefix = getIndices(node)[chunk]?.find(p => node.children![p].set.test(code));
 		if (!prefix)
 			break;
 
@@ -132,7 +114,7 @@ export function getName(code: number, node: prefixtree): string | undefined {
 		/*
 		// Linear search - too slow
 		for (const [prefix, p] of Object.entries(node.children)) {
-			if (p.set[chunk] & bit) {
+			if (p.set.test(code)) {
 				name += prefix + (prefix.endsWith('-') ? '' : ' ');
 				next = p;
 				break;
@@ -147,7 +129,7 @@ export function getName(code: number, node: prefixtree): string | undefined {
 	return (name + (node.chars[i] ?? '')).trim();
 }
 
-export function getCode(name: string, node: prefixtree): number | undefined {
+export function getCode(name: string, node: PrefixTree): number | undefined {
 	let offset = 0;
 
 	for (let s = 0; node.children && s < name.length; ) {
@@ -167,26 +149,13 @@ export function getCode(name: string, node: prefixtree): number | undefined {
 		}
 	}
 
-	name = name.slice(offset);
+	const last = name.slice(offset);
 	if (node.chars) {
-		for (let i = 0; i < node.chars.length; i++) {
-			if (node.chars[i] === name)
-				return remainingSet(node).nthSet(i);
-		}
+		const i = node.chars.findIndex(c => c === last);
+		if (i >= 0)
+			return remainingSet(node).nthSet(i);
 	} else {
-		if (/^[0-9A-Fa-f]+$/.test(name))
-			return parseInt(name, 16);
-		return undefined;
+		if (/^[0-9A-Fa-f]+$/.test(last))
+			return parseInt(last, 16);
 	}
-}
-
-export function getNames(tree: prefixtree) {
-	return new Proxy(tree, {
-		get(_target, prop: string) {
-			const code = getCode(prop, tree);
-			if (code !== undefined)
-				return {[code >> 5]: 1 << (code & 0x1f)};
-			return {} as bitset;
-		}
-	}) as any as Record<string, bitset>;
 }

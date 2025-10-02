@@ -18,7 +18,7 @@
             "type": "node-terminal",
             "name": "Debug Generate",
             "request": "launch",
-            "command": "ts-node ./scripts/generate.ts",
+            "command": "ts-node ./scripts/generate.ts -names -sequences src/unicode-data.ts",
             "cwd": "${workspaceFolder}"
         }
 
