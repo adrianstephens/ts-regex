@@ -19,7 +19,7 @@ import {
 	MutableCharacterClass
 } from "./types";
 
-import { props, enumProps } from "./unicode-data";
+import { props, enumProps, sequences } from "./unicode-data";
 
 /*
 Characters
@@ -89,6 +89,21 @@ x{n,m}?
 //-----------------------------------------------------------------------------
 // Regex parsing
 //-----------------------------------------------------------------------------
+interface sequencenode {
+	set: Record<number, number>;
+	children?: sequencenode[];
+};
+
+function getUnicodeSequence(tree: sequencenode[]): part {
+	return alternation(...tree.map(node => {
+		const cc = characterClass.fromEntries(node.set);
+		if (node.children) {
+			const child = getUnicodeSequence(node.children);
+			return concatenation(cc, child);
+		}
+		return cc;
+	}));
+}
 
 function getUnicodeSet(property: string, neg: boolean) {
 	let set;
@@ -102,6 +117,11 @@ function getUnicodeSet(property: string, neg: boolean) {
 		}
 	} else {
 		set = props[property];
+		if (!set) {
+			const tree = sequences[property];
+			if (tree)
+				return getUnicodeSequence(tree);
+		}
 	}
 	return !set ? undefined : neg ? characterClass.fromEntries(set).complement() : characterClass.fromEntries(set);
 }
@@ -191,7 +211,7 @@ export function parse(re: string, unicode = true, extended = false): part {
 			}
 			case 'q':
 				if (extended && check('{'))
-					return alternation(skipTo('}').split('|'));
+					return alternation(...skipTo('}').split('|'));
 				return c.charCodeAt(0);
 		}			
 	}
@@ -214,6 +234,8 @@ export function parse(re: string, unicode = true, extended = false): part {
 		const cs = new characterClass();
 		if (re[i] === ']' || re[i] === '-')
 			cs.set(re.charCodeAt(i++));
+
+		const alts: part[] = [];
 
 		while (i < re.length && re[i] !== ']') {
 			const from = character();
@@ -267,10 +289,15 @@ export function parse(re: string, unicode = true, extended = false): part {
 				}
 			} else if (is(from, 'class')) {
 				cs.selfUnion(from);
+			} else {
+				alts.push(from);
 			}
 		}
 		i++; // skip ']'
-		return neg ? cs.selfComplement() : cs;
+		if (!cs.empty())
+			alts.push(neg ? cs.selfComplement() : cs);
+		return alternation(...alts);
+		//return neg ? cs.selfComplement() : cs;
 	}
 
 	function addQuantified(min: number, max: number) {
@@ -298,7 +325,7 @@ export function parse(re: string, unicode = true, extended = false): part {
 	function closeAlt() {
 		let top = stack.pop();
 		if (top?.type === 'alt') {
-			top.parts.push(concatenation(curr));
+			top.parts.push(concatenation(...curr));
 			curr = [top];
 			top = stack.pop();
 		}
@@ -373,9 +400,9 @@ export function parse(re: string, unicode = true, extended = false): part {
 			case '|': {
 				const top = stack.at(-1);
 				if (top?.type === 'alt') {
-					top.parts.push(concatenation(curr));
+					top.parts.push(concatenation(...curr));
 				} else {
-					stack.push({type: 'alt', parts: [concatenation(curr)]});
+					stack.push({type: 'alt', parts: [concatenation(...curr)]});
 				}
 				curr = [];
 				break;
@@ -442,7 +469,7 @@ export function parse(re: string, unicode = true, extended = false): part {
 				if (top?.type !== 'group')
 					throw new Error('unmatched )');
 
-				top.group.part = concatenation(curr);
+				top.group.part = concatenation(...curr);
 				curr = [...top.tos, top.group];
 				break;
 			}
@@ -458,12 +485,13 @@ export function parse(re: string, unicode = true, extended = false): part {
 	if (top)
 		throw new Error('unmatched (');
 
-	return concatenation(curr);
+	return concatenation(...curr);
 }
 
 //-----------------------------------------------------------------------------
 // Regex to string
 //-----------------------------------------------------------------------------
+
 
 function printQuantified(min: number, max: number, mod: quantifiedMod): string {
 	return (min === 0 && max === -1 ? '*'
@@ -555,11 +583,11 @@ export function toRegExpString(part: part): string {
 			//return `[${part.toString()}]`;
 		}
 
-		case 'unicode':
-			return `\\p{${part.property}}`;
-
-		case 'notunicode':
-			return `\\P{${part.property}}`;
+		//case 'unicode':
+		//	return `\\p{${part.property}}`;
+//
+		//case 'notunicode':
+		//	return `\\P{${part.property}}`;
 
 		case 'wordbound':
 			return '\\b';
@@ -583,7 +611,7 @@ export function toRegExp(part: part, flags?: string) {
 // Regex AST manipulation
 //-----------------------------------------------------------------------------
 
-function visit(part: part, visitor: (p: part) => part|undefined, previsit?: (p: part) => part|undefined): part {
+export function visit(part: part, visitor: (p: part) => part|undefined, previsit?: (p: part) => part|undefined): part {
 	if (previsit)
 		part = previsit(part) ?? part;
 	/*
@@ -598,11 +626,11 @@ function visit(part: part, visitor: (p: part) => part|undefined, previsit?: (p: 
 	const t = typed(part);
 	switch (t.type) {
 		case 'concat':
-			part = concatenation((part as part[]).map(p => visit(p, visitor, previsit)));
+			part = concatenation(...t.parts.map(p => visit(p, visitor, previsit)));
 			break;
 
 		case 'alt':
-			part = alternation(t.parts.map(p => visit(p, visitor, previsit)));
+			part = alternation(...t.parts.map(p => visit(p, visitor, previsit)));
 			break;
 
 		case 'quantified':
@@ -638,6 +666,7 @@ function commonPrefix(strings:  string[]) {
 export function optimize(part: part): part {
 	return visit(part, p => {
 		if (Array.isArray(p)) {
+			//combine strings and flatten concatenations
 			const result: part[] = [];
 			let current = "";
 
@@ -657,17 +686,18 @@ export function optimize(part: part): part {
 			}
 			if (current)
 				result.push(current);
-			return concatenation(result);
+			return concatenation(...result);
 
 		} else if (is(p, 'alt')) {
+			//combine single-character strings and character classes, and factor out common prefixes
 			const unique	= [...new Set(p.parts.map(toRegExpString))];
 			const strings	= unique.filter((p): p is string => typeof p === 'string');
 			const prefix	= commonPrefix(strings);
 			if (prefix) {
-				return concatenation([prefix, alternation([
+				return concatenation(prefix, alternation(
 					...strings.map(s => s.slice(prefix.length)),
 					...unique.filter(p => typeof p !== 'string')
-				])]);
+				));
 			}
 			const result = [];
 			let cs: MutableCharacterClass | undefined;
@@ -691,15 +721,15 @@ export function optimize(part: part): part {
 			}
 			if (cs)
 				result.push(cs);
-			return alternation(result);
+			return alternation(...result);
 /*
 			// not safe to do this, as it changes the order of alternatives
 			const single = partition(unique, p => typeof p === 'string' && p.length === 1);
 			if (single.true) {
 				const c = chars(single.true.map(s => s as string).join(''));
-				return single.false ? alternation([c, ...single.false]) : c;
+				return single.false ? alternation(c, ...single.false) : c;
 			}
-			return alternation(unique);
+			return alternation(...unique);
 */
 		} else if (is(p, 'class')) {
 			const i = p.next(-1);

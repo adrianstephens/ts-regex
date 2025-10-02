@@ -1,3 +1,4 @@
+/* eslint-disable no-control-regex, no-misleading-character-class */
 import { bits } from "@isopodlabs/utilities";
 
 export interface options {
@@ -20,13 +21,18 @@ const namedControls: Record<number, string> = {
 	13:	'r',
 };
 
+const invisibleChars = /[\u0000-\u001F\u007F-\u009F\u00A0\u1680\u2000-\u200F\u2028-\u202F\u205F-\u2064\u2066-\u206F\u3000\uFE00-\uFE0F\uFEFF]/g;
+
+function controlCode(i: number): string {
+	return '\\' + (i > 32
+		? 'u' + i.toString(16).padStart(4, '0')
+		: (namedControls[i] ?? 'c' + String.fromCharCode(i + 64))
+	);
+}
+
 export function escapeText(s: string): string {
-	// eslint-disable-next-line no-control-regex
-	s = s.replace(/[\x00-\x1f]/g, c => {
-		const i = c.charCodeAt(0);
-		return '\\' + (namedControls[i] ?? 'c' + String.fromCharCode(i + 64));
-	});
-	return s.replace(/[\\^$*+?.()|[\]{}]/g, '\\$&');
+	return s.replace(/[\\^$*+?.()|[\]{}]/g, '\\$&')
+			.replace(invisibleChars, c => controlCode(c.charCodeAt(0)));
 }
 
 export class characterClass extends bits.SparseBits2 {
@@ -41,7 +47,7 @@ export class characterClass extends bits.SparseBits2 {
 	}
 
 	testChar(c: string): boolean {
-		const code = c.codePointAt(0);
+		const code = c?.codePointAt(0);
 		return code !== undefined && this.test(code);
 	}
 
@@ -50,29 +56,10 @@ export class characterClass extends bits.SparseBits2 {
 		let s = neg ? '^' : '';
 		for (const range of this.ranges(!neg)) {
 			const [c1, c2] = range;
-			s += escapeText(String.fromCodePoint(c1));//.replace(/[-\\\]]/g, '\\$&');
+			s += escapeText(String.fromCodePoint(c1));
 			if (c1 !== c2 - 1)
-				s += '-' + escapeText(String.fromCodePoint(c2 - 1));//.replace(/[-\\\]]/g, '\\$&');
+				s += '-' + escapeText(String.fromCodePoint(c2 - 1));
 		}
-		/*
-		let s = this.undef ? '^' : '';
-		for (const i in this.bits) {
-			const b = this.bits[i] ^ this.undef;
-			const c0 = +i * 32;
-
-			for (let j = 0; j < 32; j++) {
-				if (b & (1 << j)) {
-					const c1 = c0 + j;
-					while (j < 32 && (b & (1 << j)))
-						j++;
-					const c2 = c0 + j - 1;
-					s += String.fromCodePoint(c1).replace(/[-\\\]]/g, '\\$&');
-					if (c1 !== c2)
-						s += '-' + String.fromCodePoint(c2).replace(/[-\\\]]/g, '\\$&');
-				}
-			}
-		}
-			*/
 		return s;
 	}
 };
@@ -104,29 +91,27 @@ export function chars(chars: string) {
 }
 
 export function union(...classes: characterClass[]) {
-    const result = new MutableCharacterClass();
-    for (const cls of classes)
-        result.selfUnion(cls);
-    return result;
+    return classes.reduce((result, c) => result.selfUnion(c), new MutableCharacterClass());
 }
 
 // Common character class constants and ranges
-export const any		: characterClass = new characterClass([], true);//.clearString('\n\r\u2028\u2029');
+export const any		: characterClass = new characterClass([], true);
 export const eol		: characterClass = chars('\n\r\u2028\u2029');
-export const digit		: characterClass = range('0', '9');  //digit
+export const digit		: characterClass = range('0', '9');
 export const lower		: characterClass = range('a', 'z');
 export const upper		: characterClass = range('A', 'Z');
 export const alpha		: characterClass = lower.union(upper);
 export const alnum		: characterClass = alpha.union(digit);
-export const word		: characterClass = alnum.union(chars('_'));  //word
-export const whitespace	: characterClass = chars(' \t\r\n\f\v');  //whitespace
+export const word		: characterClass = alnum.union(chars('_'));
+export const whitespace	: characterClass = chars(' \t\r\n\f\v');
 export const hex		: characterClass = digit.union(chars('abcdefABCDEF'));
 export const octal		: characterClass = range('0', '7');
 
 export function text(c: string): string {
 	return c;
 }
-export function concatenation(parts: part[]): part[] | part {
+export function concatenation(...parts: part[]): part[] | part {
+	parts = parts.flat();
 	return parts.length === 1 ? parts[0] : parts;
 }
 
@@ -134,7 +119,7 @@ export interface alternation {
 	type: 'alt';
 	parts: part[];
 }
-export function alternation(parts: part[]): alternation | part {
+export function alternation(...parts: part[]): alternation | part {
 	return	parts.length === 1 ? parts[0]
 		: 	parts.length === 2 && !parts[1] ? optional(parts[0])
 		:	{type: 'alt', parts};
@@ -198,16 +183,17 @@ export function reference(value: number|string): reference {
 	return {type: 'reference', value};
 }
 
-export function anchored(part: part): part {
-	return [startAnchor, part, endAnchor];
+export function anchored(...parts: part[]): part {
+	return [startAnchor, ...parts, endAnchor];
 }
 
+/*
 export interface unicode {
 	type: 'unicode' | 'notunicode';
 	property: string;
 }
-
-type _part = alternation | noncapture | capture | characterClass | unicode | quantified | boundary | reference;
+*/
+type _part = alternation | noncapture | capture | characterClass | quantified | boundary | reference;// | unicode;
 export type part = string | part[] | _part;
 
 /*
@@ -230,10 +216,10 @@ export function is<T extends _part['type']|'text'|'concat'>(part: part, istype: 
 
 export function typed(part: part):
     | { type: 'text', part: string }
-    | { type: 'concat', part: part[] }
+    | { type: 'concat', parts: part[] }
     | _part
 {
     return typeof part === 'string'	? { type: 'text', part }
-    	: Array.isArray(part)		? { type: 'concat', part }
+    	: Array.isArray(part)		? { type: 'concat', parts: part }
     	: part;
 }

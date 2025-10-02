@@ -10,7 +10,7 @@ If you use this package, consider [buying me a cup of tea](https://coff.ee/adria
 
 ## Features
 
-- **Complete JavaScript regex syntax support** - All standard regex features
+ ### Complete JavaScript regex syntax support
 - **Unicode support** - Proper handling of surrogate pairs and Unicode properties
 - **Character classes** - Efficient bitset-based character class implementation
 - **Groups and captures** - Named and numbered capture groups, non-capturing groups
@@ -19,18 +19,29 @@ If you use this package, consider [buying me a cup of tea](https://coff.ee/adria
 - **Escape sequences** - All standard JavaScript escape sequences
 - **Flag modifiers** - Inline flag modification with `(?flags:pattern)` syntax
 
+ ### AST Generation
+- **Parse strings into an AST**
+- **Programmatically create a regex AST using a simple API**
+- **Convert AST back to regex strings or RegExp objects**
+
+### RegEx Engine
+- **Optional alternative engine to Javascript's built-in engine**
+- **NFA/DFA hybrid engine with backtracking support**
+
+ ### Unicode
+- **Script to generate unicode tables from official sources**
+- **Stand-alone API for unicode properties**
+
+
 ## Usage
 
 ### Parsing Regex Patterns
 
 ```typescript
-import { parse } from './regexp';
+import { parse } from '@isopodlabs/regex';
 
 // Parse a regex pattern
 const ast = parse('hello\\s+(world|universe)', true); // unicode=true
-
-// Parse without Unicode support
-const ast2 = parse('[a-z]+', false);
 ```
 
 ### Building Regex Programmatically
@@ -40,17 +51,17 @@ import {
   oneOrMore, optional, capture, anchored, 
   digit, lower, alpha, range, chars, union,
   repeat, reference, toRegExpString 
-} from './regexp';
+} from '@isopodlabs/regex';
 
 // Build: ^([a-z]+)(\d*)\1$
-const pattern = anchored([
+const pattern = anchored(
   capture(oneOrMore(lower)),
   capture(zeroOrMore(digit)),
   reference(1)
-]);
+);
 
 // Convert AST to RegExp
-const regex = new RegExp(toRegExpString(pattern));
+const regex = toRegExp(pattern);
 
 // Mix direct helpers with character classes
 const emailPattern = [
@@ -69,13 +80,15 @@ const emailPattern = [
 - `[abc]` - Character set
 - `[^abc]` - Negated character set  
 - `[a-z]` - Character ranges
-- `\\d`, `\\w`, `\\s` - Predefined classes and their negations
-- `\\p{Property}`, `\\P{Property}` - Unicode properties (Unicode mode only)
+- `\d`, `\D`, `\w`, `\W`, `\s`, `\S` - Predefined classes and their negations
+- `\p{Property}`, `\P{Property}` - Unicode properties (Unicode mode only)
+- `\q` - Quoted strings (Extended mode only)
 
 ### Quantifiers
 - `*`, `+`, `?` - Basic quantifiers
 - `{n}`, `{n,}`, `{n,m}` - Numeric quantifiers
 - `*?`, `+?`, `??` - Non-greedy variants
+- `*+`, `++`, `?+` - Possessive variants
 
 ### Groups
 - `(pattern)` - Capturing group
@@ -96,20 +109,20 @@ const emailPattern = [
 ### Anchors and Boundaries
 - `^` - Start of input
 - `$` - End of input
-- `\\b` - Word boundary
-- `\\B` - Non-word boundary
+- `\b` - Word boundary (backspace inside `[]`)
+- `\B` - Non-word boundary
 
 ### Backreferences
 - `\\1`, `\\2`, etc. - Numbered backreferences
 - `\\k<name>` - Named backreferences
 
 ### Escape Sequences
-- `\\t`, `\\r`, `\\n`, `\\v`, `\\f` - Whitespace characters
-- `\\0` - NUL character
-- `\\cX` - Control characters
-- `\\xHH` - Hexadecimal escape
-- `\\uHHHH` - Unicode escape (16-bit)
-- `\\u{HHHHH}` - Unicode code point (Unicode mode only)
+- `\t`, `\r`, `\n`, `\v`, `\f` - Whitespace characters
+- `\0` - NUL character
+- `\cX` - Control characters
+- `\xHH` - Hexadecimal escape
+- `\uHHHH` - Unicode escape (16-bit)
+- `\u{HHHHH}` - Unicode code point (Unicode mode only)
 
 ## AST Structure
 
@@ -123,7 +136,6 @@ type part = string		//literal
 	| noncapture 		//noncapture 
 	| capture 			//capture 
 	| characterClass 	//characterClass 
-	| unicode 			//unicode 
 	| quantified 		//quantified 
 	| boundary 			//boundary 
 	| reference			//reference
@@ -135,7 +147,6 @@ type part = string		//literal
 - `capture` - Capturing groups `(...)` and `(?<name>...)`
 - `noncapture` - Non-capturing groups `(?:...)` and assertions
 - `characterClass` - Character classes `[...]`
-- `unicode` - Unicode property escapes `\\p{...}`
 - `quantified` - Quantified expressions
 - `boundary` - Anchors and word boundaries
 - `reference` - Backreferences
@@ -145,25 +156,6 @@ type part = string		//literal
 These functions are designed for **programmatic regex construction**:
 
 ```typescript
-// Quantifier helpers
-zeroOrMore(part, greedy?)     // part*
-oneOrMore(part, greedy?)      // part+
-optional(part, greedy?)       // part?
-repeat(part, min, max, greedy?)  // part{min,max}
-
-// Group helpers
-capture(part, name?)          // (part) or (?<name>part)
-noncapture(part, flags?)      // (?:part) or (?flags:part)
-
-// Boundary helpers
-wordBoundary, nonWordBoundary // \b, \B
-startAnchor, endAnchor        // ^, $
-
-// Utility
-anchored(part)               // ^part$
-reference(number | name)     // \1 or \k<name>
-toRegExpString(part)         // Convert AST to regex string
-
 // Character class helpers
 range(from, to)              // [from-to]
 chars(string)                // [string] (literal chars)
@@ -173,16 +165,31 @@ union(...classes)            // Combine character classes
 any, digit, word, whitespace // ., \d, \w, \s
 lower, upper, alpha, alnum   // [a-z], [A-Z], [a-zA-Z], [a-zA-Z0-9]
 hex, octal                   // [0-9a-fA-F], [0-7]
+
+// Quantifier helpers
+zeroOrMore(part, mod='greedy')     // part*
+oneOrMore(part, mod='greedy')      // part+
+optional(part, mod='greedy')       // part?
+repeat(part, min, max, mod='greedy') // part{min,max}
+
+// Group helpers
+capture(part, name?)          // (part) or (?<name>part)
+noncapture(part, flags?)      // (?:part) or (?flags:part)
+lookAhead(part)		          // (?=part)
+negLookAhead(part)	          // (?!part)
+lookBehind(part)	          // (?<=part)
+negLookBehind(part)	          // (?<!part)
+
+// Boundary helpers
+wordBoundary, nonWordBoundary // \b, \B
+startAnchor, endAnchor        // ^, $
+
+// Utility
+anchored(part)               // ^part$
+reference(number | name)     // \1 or \k<name>
+toRegExpString(part)         // Convert AST to regex string
+toRegExp(part)               // Convert AST to RegExp
 ```
-
-## Character Class Implementation
-
-Uses an efficient bitset-based `CharacterSet` class:
-
-- **Memory efficient** - 32 characters per integer
-- **Fast operations** - Bitwise operations for set math
-- **Negation support** - Elegant handling via `undef` property
-- **Unicode aware** - Works with code points and code units
 
 ## Unicode Support
 
@@ -264,5 +271,5 @@ const complexPattern = [
 ];
 
 // Convert to actual RegExp
-const regex = new RegExp(toRegExpString(phonePattern));
+const regex = toRegExp(phonePattern));
 ```
