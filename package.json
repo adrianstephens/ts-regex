@@ -17,6 +17,7 @@
 	],
 	"scripts": {
 		"build": "tsc",
+		"lint": "eslint \"src/**/*.ts\"",
 		"generate": "ts-node scripts/generate.ts -names -sequences src/unicode-data.ts"
 	},
 	"keywords": [
@@ -31,6 +32,6 @@
 		"typescript-eslint": "^8.26.0"
 	},
 	"dependencies": {
-		"@isopodlabs/utilities": "^1.5.5"
+		"@isopodlabs/utilities": "^1.7.1"
 	}
 }

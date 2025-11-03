@@ -150,10 +150,8 @@ test('Unicode Name->Code Lookup Tests', () => {
 });
 
 console.log(info.Name);
-for (const [key, value] of Object.entries(info)) {
+for (const [key, value] of Object.entries(info))
 	console.log(`${key}: ${value}`);
-}
 
-for (const i of withProp('ASCII_Hex_Digit')!) {
+for (const i of withProp('ASCII_Hex_Digit')!)
 	console.log(i, getInfo(i).Name);
-}

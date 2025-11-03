@@ -22,9 +22,8 @@ export function getInfo(code: number) {
 			return undefined;
 		},
     	has(_, prop: string): boolean {
-			if (prop === 'Name') {
+			if (prop === 'Name')
 				return true;
-			}
 			if (data.enumProps[prop]) {
 				for (const [_, bits] of Object.entries(data.enumProps[prop])) {
 					if (bits.test(code))
@@ -52,9 +51,8 @@ export function getInfo(code: number) {
 }
 
 export function withProp(prop: string, value?:string) {
-	if (value === undefined) {
+	if (value === undefined)
 		return data.props[prop];
-	}
 	return data.enumProps[prop][value];
 }
 
