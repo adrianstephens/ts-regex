@@ -56,3 +56,7 @@ export function withProp(prop: string, value?:string) {
 	return data.enumProps[prop][value];
 }
 
+export function propValues(prop: string) {
+	const p = data.enumProps[prop];
+	return p && Object.keys(p);
+}

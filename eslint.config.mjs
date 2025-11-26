@@ -1,8 +1,8 @@
-// @ts-check
 import eslint from "@eslint/js";
 import tslint from "typescript-eslint";
 async function maybeImport(modulePath) { try { return await import(modulePath); } catch { return undefined; } }
 let customPlugin = await maybeImport('../eslint-custom.mjs');
+// @ts-check
 
 export default tslint.config(
 	eslint.configs.recommended,

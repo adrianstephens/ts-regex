@@ -77,7 +77,23 @@ export function getNames(tree: PrefixTree) {
 			if (code !== undefined)
 				return bits.SparseBits.fromIndices(code);
 			return new bits.SparseBits();
-		}
+		},
+		ownKeys(tree) {
+			const keys: string[] = [];
+			const gather = (node: PrefixTree, prefix: string) => {
+				if (node.chars) {
+					for (const i of node.chars)
+						keys.push(prefix + i);
+				}
+				for (const [p, child] of Object.entries(node.children ?? {}))
+					gather(child, prefix + p + (p.endsWith('-') ? '' : ' '));
+			};
+			gather(tree, '');
+			return keys;
+		},
+  		getOwnPropertyDescriptor() {
+ 			return { configurable: true, enumerable: true };
+  		}
 	}) as any as Record<string, BitSet>;
 }
 
